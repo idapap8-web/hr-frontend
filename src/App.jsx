@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import './App.css';
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://hr-backend-1-heqi.onrender.com';
+// AUTOMATSKO PREPOZNAVANJE RAČUNARA: Aplikacija sama uzima IP adresu računara na kom se nalazi i gađa port 3000
+const API_URL = `http://${window.location.hostname}:3000`;
 const DANI_NAZIVI = ['Pon', 'Uto', 'Sre', 'Čet', 'Pet', 'Sub', 'Ned'];
 
-// Tvoja tajna menadžerska lozinka
-const LOZINKA_ZA_PRISTUP = 'menadzer2026';
+// DVE LOZINKE ZA PRISTUP
+const LOZINKA_ADMIN = 'menadzer2026'; // Puni pristup (menjanje, dodavanje)
+const LOZINKA_PREGLED = 'gledaj2026';  // Samo za gledanje (telefon / gosti)
 
 const POCETNO_STANJE_FORME = {
   ime: '', prezime: '', pozicija: '', satnica: '',
@@ -16,6 +18,7 @@ const POCETNO_STANJE_FORME = {
 function App() {
   // --- LOGIN STATE ---
   const [isUlogovan, setIsUlogovan] = useState(false);
+  const [tipKorisnika, setTipKorisnika] = useState('gost'); // 'admin' ili 'gost'
   const [unosLozinke, setUnosLozinke] = useState('');
   const [greskaLozinka, setGreskaLozinka] = useState(false);
 
@@ -59,7 +62,7 @@ function App() {
     return datumi;
   };
 
-  const [trenutnaNedelja] = useState(uzmiDatumeTekuceNedelje());
+  const [trenutnaNedelja] = useState(uzmiDatumeTekukeNedelje());
 
   const ucitajPodatke = async () => {
     try {
@@ -72,23 +75,27 @@ function App() {
       setRaspored(await resRaspored.json());
       setOdsustva(await resOdsustva.json());
     } catch (err) {
-      console.error("Greška:", err);
+      console.error("Greška pri učitavanju:", err);
     } finally {
       setUcitavam(false);
     }
   };
 
-  // Učitaj podatke samo ako je korisnik uspešno ukucao lozinku
   useEffect(() => { 
     if (isUlogovan) {
       ucitajPodatke(); 
     }
   }, [isUlogovan]);
 
-  // Provera unete lozinke
+  // Provera unete lozinke (Admin vs Gost)
   const proveriLozinku = (e) => {
     e.preventDefault();
-    if (unosLozinke === LOZINKA_ZA_PRISTUP) {
+    if (unosLozinke === LOZINKA_ADMIN) {
+      setTipKorisnika('admin');
+      setIsUlogovan(true);
+      setGreskaLozinka(false);
+    } else if (unosLozinke === LOZINKA_PREGLED) {
+      setTipKorisnika('gost');
       setIsUlogovan(true);
       setGreskaLozinka(false);
     } else {
@@ -103,6 +110,7 @@ function App() {
 
   const sacuvajRadnika = (e) => {
     e.preventDefault();
+    if (tipKorisnika !== 'admin') return alert('Nemate dozvolu za menjanje!');
     const url = idZaIzmenu ? `${API_URL}/zaposleni/${idZaIzmenu}` : `${API_URL}/zaposleni`;
     fetch(url, { 
       method: idZaIzmenu ? 'PUT' : 'POST', 
@@ -117,6 +125,7 @@ function App() {
   };
 
   const pripremiZaIzmenu = (radnik) => {
+    if (tipKorisnika !== 'admin') return;
     setForm({
       ime: radnik.ime, prezime: radnik.prezime, pozicija: radnik.pozicija,
       satnica: radnik.satnica || '', nocna_pocetak: radnik.nocna_pocetak || '22:00',
@@ -129,6 +138,7 @@ function App() {
   };
 
   const obrisiRadnika = (id) => {
+    if (tipKorisnika !== 'admin') return;
     if (window.confirm("Da li sigurno želite da obrišete radnika?")) {
       fetch(`${API_URL}/zaposleni/${id}`, { method: 'DELETE' }).then(() => ucitajPodatke());
     }
@@ -136,6 +146,7 @@ function App() {
 
   const sacuvajOdsustvo = (e) => {
     e.preventDefault();
+    if (tipKorisnika !== 'admin') return;
     fetch(`${API_URL}/odsustva`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -168,6 +179,7 @@ function App() {
   };
 
   const sacuvajSmenu = (radnikId, datum, pocetak, kraj) => {
+    if (tipKorisnika !== 'admin') return; // Blokada za goste
     const tipOdsustva = proveriPreklapanjeOdsustva(radnikId, datum);
     if (tipOdsustva && pocetak !== '' && pocetak.toUpperCase() !== 'GO' && pocetak.toUpperCase() !== 'BOL') {
       if (!window.confirm(`Radnik ima odobren ${tipOdsustva} za taj dan. Upisati smenu uprkos tome?`)) return;
@@ -218,7 +230,7 @@ function App() {
       <div className="login-overlay">
         <div className="login-box">
           <h2>🔒 HR Menadžer Zaštita</h2>
-          <p>Unesite menadžersku lozinku za pristup podacima firme.</p>
+          <p>Unesite lozinku za pun pristup ili pregled rasporeda.</p>
           <form onSubmit={proveriLozinku}>
             <input 
               type="password" 
@@ -235,11 +247,10 @@ function App() {
     );
   }
 
-  // --- GLAVNA APLIKACIJA NAKON LOGOVANJA ---
   return (
     <div className="app-container">
       <header className="app-header">
-        <h1>HR Menadžer Pro</h1>
+        <h1>HR Menadžer Pro {tipKorisnika === 'gost' && <span style={{fontSize: '1rem', color: '#fbbf24'}}>(Samo pregled)</span>}</h1>
         <p>Sistem za planiranje rada i automatski obračun</p>
         <button className="btn-logout" onClick={() => { setIsUlogovan(false); setUnosLozinke(''); }}>🚪 Odjavi se</button>
       </header>
@@ -251,9 +262,12 @@ function App() {
         <button className={`nav-link ${aktivniTab === 'planer' ? 'active' : ''}`} onClick={() => setAktivniTab('planer')}>
           📅 Planer Smena
         </button>
-        <button className={`nav-link ${aktivniTab === 'postavke' ? 'active' : ''}`} onClick={() => setAktivniTab('postavke')}>
-          ⚙️ Postavke
-        </button>
+        {/* TAB POSTAVKE VIDI SAMO ADMIN */}
+        {tipKorisnika === 'admin' && (
+          <button className={`nav-link ${aktivniTab === 'postavke' ? 'active' : ''}`} onClick={() => setAktivniTab('postavke')}>
+            ⚙️ Postavke (Dodaj radnika)
+          </button>
+        )}
       </nav>
 
       <main className="tab-content">
@@ -264,7 +278,7 @@ function App() {
               <div className="fade-in">
                 <div className="section-header-box">
                   <h2>Spisak Zaposlenih</h2>
-                  <p>Pregled radnika, prijava odsustva i obračun plata na osnovu planera</p>
+                  <p>Pregled radnika, evidencija odsustva i obračun plata</p>
                 </div>
                 
                 <div className="cards-grid">
@@ -273,18 +287,23 @@ function App() {
                       <h2>{radnik.ime} {radnik.prezime}</h2>
                       <div className="worker-role">{radnik.pozicija}</div>
                       
-                      <button onClick={() => { setKalendarRadnikId(radnik.id); setPrikaziKalendar(true); }} className="btn-action info">
-                        📅 Evidencija Odsustva (GO/BOL)
-                      </button>
+                      {tipKorisnika === 'admin' && (
+                        <button onClick={() => { setKalendarRadnikId(radnik.id); setPrikaziKalendar(true); }} className="btn-action info">
+                          📅 Evidencija Odsustva (GO/BOL)
+                        </button>
+                      )}
                       
                       <button onClick={() => generisiIzvestaj(radnik.id, `${radnik.ime} ${radnik.prezime}`, izabraniMesec, izabranaGodina)} className="btn-action dark">
                         📊 Obračunaj platu
                       </button>
 
-                      <div className="card-footer-buttons">
-                        <button onClick={() => pripremiZaIzmenu(radnik)} className="btn-outline info">Izmeni</button>
-                        <button onClick={() => obrisiRadnika(radnik.id)} className="btn-outline danger">Obriši</button>
-                      </div>
+                      {/* DUGMAD ZA IZMENU I BRISANJE VIDI SAMO ADMIN */}
+                      {tipKorisnika === 'admin' && (
+                        <div className="card-footer-buttons">
+                          <button onClick={() => pripremiZaIzmenu(radnik)} className="btn-outline info">Izmeni</button>
+                          <button onClick={() => obrisiRadnika(radnik.id)} className="btn-outline danger">Obriši</button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -298,7 +317,9 @@ function App() {
                   <div className="table-header-row">
                     <div>
                       <h2>Nedeljni planer smena</h2>
-                      <p style={{margin:0, fontSize:'0.9rem', color:'var(--text-muted)'}}>Upišite vreme rada (npr. 08:00 i 16:00) ili oznake 'GO' / 'BOL'</p>
+                      <p style={{margin:0, fontSize:'0.9rem', color:'var(--text-muted)'}}>
+                        {tipKorisnika === 'admin' ? "Upišite vreme rada (npr. 08:00 i 16:00) ili oznake 'GO' / 'BOL'" : "Pregled planiranih smena za tekuću nedelju"}
+                      </p>
                     </div>
                   </div>
                   <div className="scrollable-table">
@@ -333,6 +354,7 @@ function App() {
                                       <input 
                                         type="text" 
                                         value={smena.pocetak || ''} 
+                                        disabled={tipKorisnika !== 'admin'} // AKO NIJE ADMIN, ZAKLJUČAJ INPUT
                                         onChange={(e) => sacuvajSmenu(radnik.id, dan.formatirano, e.target.value, smena.kraj)} 
                                         placeholder={imaOdsustvo ? imaOdsustvo : "08:00"} 
                                         className={`${klasaBoje}`} 
@@ -340,6 +362,7 @@ function App() {
                                       <input 
                                         type="text" 
                                         value={smena.kraj || ''} 
+                                        disabled={tipKorisnika !== 'admin'} // AKO NIJE ADMIN, ZAKLJUČAJ INPUT
                                         onChange={(e) => sacuvajSmenu(radnik.id, dan.formatirano, smena.pocetak, e.target.value)} 
                                         placeholder={imaOdsustvo ? "SLOB" : "16:00"} 
                                         className={`${klasaBoje}`} 
@@ -366,7 +389,7 @@ function App() {
             )}
 
             {/* === TAB 3: POSTAVKE === */}
-            {aktivniTab === 'postavke' && (
+            {aktivniTab === 'postavke' && tipKorisnika === 'admin' && (
               <div className="fade-in">
                 <form onSubmit={sacuvajRadnika} className="hr-form">
                   <h3>{idZaIzmenu ? 'Izmena podataka radnika' : 'Dodaj novog zaposlenog u firmu'}</h3>
@@ -425,82 +448,4 @@ function App() {
         )}
       </main>
 
-      {/* --- MODAL ZA KALENDAR ODSUSTVA --- */}
-      {prikaziKalendar && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <h2>Prijava odsustva</h2>
-            <form onSubmit={sacuvajOdsustvo} className="modal-form">
-              <div>
-                <label>Tip odsustva:</label>
-                <select name="tip" value={novoOdsustvo.tip} onChange={(e)=>setNovoOdsustvo({...novoOdsustvo, tip: e.target.value})}>
-                  <option value="GO">Godišnji odmor</option>
-                  <option value="BOLOVANJE">Bolovanje</option>
-                </select>
-              </div>
-              <div>
-                <label>Od datuma:</label>
-                <input type="date" name="od" required value={novoOdsustvo.od} onChange={(e)=>setNovoOdsustvo({...novoOdsustvo, od: e.target.value})} />
-              </div>
-              <div>
-                <label>Do datuma:</label>
-                <input type="date" name="do" required value={novoOdsustvo.do} onChange={(e)=>setNovoOdsustvo({...novoOdsustvo, do: e.target.value})} />
-              </div>
-              <div className="modal-buttons">
-                <button type="submit" className="btn-action info">Sačuvaj</button>
-                <button type="button" className="btn-action dark" onClick={() => setPrikaziKalendar(false)}>Zatvori</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* --- MODAL ZA IZVEŠTAJ ZARADE --- */}
-      {prikaziIzvestaj && izvestaj && (
-        <div className="modal-overlay">
-          <div className="modal-content scrollable-y">
-            <h2>Automatski Izveštaj Zarade</h2>
-            <div className="modal-subtitle">{izvestaj.imeRadnika}</div>
-
-            <div className="modal-filters">
-              <select value={izabraniMesec} onChange={(e) => { setIzabraniMesec(e.target.value); generisiIzvestaj(aktivniRadnik.id, aktivniRadnik.ime, e.target.value, izabranaGodina); }}>
-                <option value="1">Januar</option><option value="2">Februar</option><option value="3">Mart</option><option value="4">April</option>
-                <option value="5">Maj</option><option value="6">Jun</option><option value="7">Jul</option><option value="8">Avgust</option>
-                <option value="9">Septembar</option><option value="10">Oktobar</option><option value="11">Novembar</option><option value="12">Decembar</option>
-              </select>
-              <select value={izabranaGodina} onChange={(e) => { setIzabranaGodina(e.target.value); generisiIzvestaj(aktivniRadnik.id, aktivniRadnik.ime, izabraniMesec, e.target.value); }}>
-                <option value="2025">2025</option><option value="2026">2026</option>
-              </select>
-            </div>
-
-            <div className="report-block">
-              <div className="report-row"><span className="label">Osnovna satnica:</span><span>{izvestaj.satnica} RSD</span></div>
-              <div className="divider"></div>
-              <div className="report-row"><span className="label">Odrađeni sati iz planera:</span><span>{izvestaj.ukupnoSati} h</span></div>
-              <div className="report-row"><span className="label">Od toga noćni sati:</span><span>{izvestaj.nocniSati} h</span></div>
-              <div className="report-row highlight"><span className="font-bold">Zarada od rada:</span><span className="font-bold">{izvestaj.zaradaOdRada} RSD</span></div>
-            </div>
-
-            <div className="report-block">
-              <h4>Odsustva zabeležena u planeru</h4>
-              <div className="report-row"><span className="label">Godišnji odmor ({izvestaj.goProcenat}%):</span><span className="text-yellow">{izvestaj.satiGO} h</span></div>
-              <div className="report-row text-yellow"><span className="label">Naknada za GO:</span><span>{izvestaj.zaradaGO} RSD</span></div>
-              <div className="divider"></div>
-              <div className="report-row"><span className="label">Bolovanje ({izvestaj.bolovanjeProcenat}%):</span><span className="text-red">{izvestaj.satiBolovanje} h</span></div>
-              <div className="report-row text-red"><span className="label">Naknada za Bolovanje:</span><span>{izvestaj.zaradaBolovanje} RSD</span></div>
-            </div>
-
-            <div className="report-total">
-              <div className="total-label">Ukupno za isplatu</div>
-              <div className="total-amount">{izvestaj.plata} RSD</div>
-            </div>
-
-            <button onClick={() => setPrikaziIzvestaj(false)} className="btn-action dark w-100">Zatvori</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-export default App;
+      {/* --- MODAL ZA KALENDAR
