@@ -111,12 +111,20 @@ function App() {
 
       radnikoveSmene.forEach(smena => {
         const pVal = (smena.pocetak || '').toUpperCase().trim();
-        if (pVal === 'GO' || pVal === 'BOL' || pVal === 'BOLOVANJE') {
+        const kVal = (smena.kraj || '').toUpperCase().trim();
+        
+        // Obračun za GO i BOL na osnovu specijalnih oznaka ili 00:00 / 00:01
+        if (pVal === 'GO' || (pVal === '00:00' && kVal === '00:00')) {
           ukupniSati += 8;
-          const procenat = pVal === 'BOL' ? (parseFloat(radnik.bolovanje_procenat || 65)/100) : (parseFloat(radnik.go_procenat || 100)/100);
-          ukupnaZarada += 8 * parseFloat(radnik.satnica || 0) * procenat;
+          ukupnaZarada += 8 * parseFloat(radnik.satnica || 0) * (parseFloat(radnik.go_procenat || 100)/100);
           return;
         }
+        if (pVal === 'BOL' || pVal === 'BOLOVANJE' || (pVal === '00:00' && kVal === '00:01')) {
+          ukupniSati += 8;
+          ukupnaZarada += 8 * parseFloat(radnik.satnica || 0) * (parseFloat(radnik.bolovanje_procenat || 65)/100);
+          return;
+        }
+        
         if (!smena.pocetak || !smena.kraj || !smena.pocetak.includes(':') || !smena.kraj.includes(':')) return;
         let p = parseInt(smena.pocetak.split(':')[0]);
         let k = parseInt(smena.kraj.split(':')[0]);
@@ -196,18 +204,23 @@ function App() {
     setUcitavam(true);
     let tekuciDan = new Date(start);
 
+    // Pretvaramo GO i BOL u vremenske formate koje baza 100% prihvata bez greške 500
+    // GO = 00:00 do 00:00
+    // BOL = 00:00 do 00:01
+    const satPocetak = "00:00";
+    const satKraj = odsustvoForm.tip === 'GO' ? "00:00" : "00:01";
+
     while (tekuciDan <= end) {
       const formatiranDatum = tekuciDan.toISOString().split('T')[0];
       
-      // Sigurno slanje: Upisujemo oznaku odsustva u oba polja da server ne vraća grešku 500
       await fetch(`${API_URL}/raspored`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           zaposleni_id: selektovaniRadnikOdsustvo.id,
           datum: formatiranDatum,
-          pocetak: odsustvoForm.tip, 
-          kraj: odsustvoForm.tip
+          pocetak: satPocetak, 
+          kraj: satKraj
         })
       });
       tekuciDan.setDate(tekuciDan.getDate() + 1);
@@ -220,7 +233,11 @@ function App() {
 
   const izracunajPlaniraneSateUNedelji = (radnikId) => {
     return raspored.filter(r => r.zaposleni_id === radnikId && trenutnaNedelja.some(n => n.formatirano === r.datum)).reduce((ukupno, smena) => {
-      if (!smena || !smena.pocetak || ['GO','BOL'].includes((smena.pocetak || '').toUpperCase())) return ukupno;
+      if (!smena || !smena.pocetak) return ukupno;
+      // Ako je GO ili BOL preko 00:00 formata, računamo standardnih 8 sati za taj dan u planeru
+      if (smena.pocetak === "00:00" && (smena.kraj === "00:00" || smena.kraj === "00:01")) {
+        return ukupno + 8;
+      }
       if (!smena.pocetak.includes(':') || !smena.kraj.includes(':')) return ukupno;
       let p = parseInt(smena.pocetak.split(':')[0]); let k = parseInt(smena.kraj.split(':')[0]);
       if (k === 0) k = 24; return ukupno + (k > p ? k - p : 24 - p + k);
@@ -347,15 +364,23 @@ function App() {
                           {zaposleni.map(radnik => {
                             const danasnjaSmena = raspored.find(s => s.zaposleni_id === radnik.id && s.datum === dobijDanasnjiString());
                             if (!danasnjaSmena || !danasnjaSmena.pocetak) return null;
-                            const isOdsustvo = ['GO','BOL'].includes((danasnjaSmena.pocetak || '').toUpperCase());
+                            
+                            let tekstSmene = `${danasnjaSmena.pocetak} - ${danasnjaSmena.kraj}`;
+                            let bojaBedza = '#0284c7';
+                            
+                            if (danasnjaSmena.pocetak === "00:00") {
+                              if (danasnjaSmena.kraj === "00:00") { tekstSmene = "🌴 GO"; bojaBedza = "#b45309"; }
+                              else if (danasnjaSmena.kraj === "00:01") { tekstSmene = "🤒 BOL"; bojaBedza = "#b91c1c"; }
+                            }
+
                             return (
                               <div key={radnik.id} style={{background:'#0f172a', padding:'1rem', borderRadius:'6px', border:'1px solid #1e293b', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
                                 <div>
                                   <strong style={{color:'white', display:'block'}}>{radnik.ime} {radnik.prezime}</strong>
                                   <span style={{fontSize:'0.8rem', color:'#94a3b8'}}>{radnik.pozicija}</span>
                                 </div>
-                                <span style={{background: isOdsustvo ? '#b45309' : '#0284c7', color:'white', padding:'0.3rem 0.6rem', borderRadius:'4px', fontSize:'0.85rem', fontWeight:'bold'}}>
-                                  {danasnjaSmena.pocetak} {danasnjaSmena.kraj && danasnjaSmena.kraj !== danasnjaSmena.pocetak ? `- ${danasnjaSmena.kraj}` : ''}
+                                <span style={{background: bojaBedza, color:'white', padding:'0.3rem 0.6rem', borderRadius:'4px', fontSize:'0.85rem', fontWeight:'bold'}}>
+                                  {tekstSmene}
                                 </span>
                               </div>
                             );
@@ -426,6 +451,23 @@ function App() {
                               <td className="text-left font-light">{radnik.ime} {radnik.prezime}</td>
                               {trenutnaNedelja.map(dan => {
                                 const smena = raspored.find(r => r.zaposleni_id === radnik.id && r.datum === dan.formatirano) || { pocetak: '', kraj: '' };
+                                
+                                // Detekcija GO / BOL na osnovu bezbednih markera vremena
+                                if (smena.pocetak === "00:00" && smena.kraj === "00:00") {
+                                  return (
+                                    <td key={dan.formatirano} style={{background: '#78350f', color: '#fef3c7', fontWeight: 'bold', textAlign: 'center', fontSize: '0.9rem'}}>
+                                      🌴 GO
+                                    </td>
+                                  );
+                                }
+                                if (smena.pocetak === "00:00" && smena.kraj === "00:01") {
+                                  return (
+                                    <td key={dan.formatirano} style={{background: '#7f1d1d', color: '#fee2e2', fontWeight: 'bold', textAlign: 'center', fontSize: '0.9rem'}}>
+                                      🤒 BOL
+                                    </td>
+                                  );
+                                }
+
                                 const prikaziKraj = smena.kraj && smena.kraj !== smena.pocetak;
                                 return (
                                   <td key={dan.formatirano}>
