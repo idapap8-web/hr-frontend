@@ -93,7 +93,6 @@ function App() {
 
   const [trenutnaNedelja] = useState(uzmiDatumeTekuceNedelje());
 
-  // DODATE MAKSIMALNE BEZBEDNOSNE PROVERE PROTIV NULL VREDNOSTI DA SPREČE BELI EKRAN
   const lokalniObracunStats = (sveSmene, sviRadnici) => {
     let ukupniSati = 0;
     let ukupnaZarada = 0;
@@ -199,6 +198,8 @@ function App() {
 
     while (tekuciDan <= end) {
       const formatiranDatum = tekuciDan.toISOString().split('T')[0];
+      
+      // Sigurno slanje: Upisujemo oznaku odsustva u oba polja da server ne vraća grešku 500
       await fetch(`${API_URL}/raspored`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -206,7 +207,7 @@ function App() {
           zaposleni_id: selektovaniRadnikOdsustvo.id,
           datum: formatiranDatum,
           pocetak: odsustvoForm.tip, 
-          kraj: ''
+          kraj: odsustvoForm.tip
         })
       });
       tekuciDan.setDate(tekuciDan.getDate() + 1);
@@ -354,7 +355,7 @@ function App() {
                                   <span style={{fontSize:'0.8rem', color:'#94a3b8'}}>{radnik.pozicija}</span>
                                 </div>
                                 <span style={{background: isOdsustvo ? '#b45309' : '#0284c7', color:'white', padding:'0.3rem 0.6rem', borderRadius:'4px', fontSize:'0.85rem', fontWeight:'bold'}}>
-                                  {danasnjaSmena.pocetak} {danasnjaSmena.kraj ? `- ${danasnjaSmena.kraj}` : ''}
+                                  {danasnjaSmena.pocetak} {danasnjaSmena.kraj && danasnjaSmena.kraj !== danasnjaSmena.pocetak ? `- ${danasnjaSmena.kraj}` : ''}
                                 </span>
                               </div>
                             );
@@ -425,11 +426,12 @@ function App() {
                               <td className="text-left font-light">{radnik.ime} {radnik.prezime}</td>
                               {trenutnaNedelja.map(dan => {
                                 const smena = raspored.find(r => r.zaposleni_id === radnik.id && r.datum === dan.formatirano) || { pocetak: '', kraj: '' };
+                                const prikaziKraj = smena.kraj && smena.kraj !== smena.pocetak;
                                 return (
                                   <td key={dan.formatirano}>
                                     <div className="table-inputs-group">
                                       <input type="text" value={smena.pocetak || ''} onChange={(e) => sacuvajSmenu(radnik.id, dan.formatirano, e.target.value, smena.kraj || '')} placeholder="08:00" />
-                                      <input type="text" value={smena.kraj || ''} onChange={(e) => sacuvajSmenu(radnik.id, dan.formatirano, smena.pocetak || '', e.target.value)} placeholder="16:00" />
+                                      <input type="text" value={prikaziKraj ? smena.kraj : ''} onChange={(e) => sacuvajSmenu(radnik.id, dan.formatirano, smena.pocetak || '', e.target.value)} placeholder="16:00" />
                                     </div>
                                   </td>
                                 );
