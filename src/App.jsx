@@ -113,13 +113,12 @@ function App() {
         const pVal = (smena.pocetak || '').toUpperCase().trim();
         const kVal = (smena.kraj || '').toUpperCase().trim();
         
-        // Obračun za GO i BOL na osnovu specijalnih oznaka ili 00:00 / 00:01
-        if (pVal === 'GO' || (pVal === '00:00' && kVal === '00:00')) {
+        if (pVal === 'GO' || smena.is_go || (pVal === '00:00' && kVal === '00:00')) {
           ukupniSati += 8;
           ukupnaZarada += 8 * parseFloat(radnik.satnica || 0) * (parseFloat(radnik.go_procenat || 100)/100);
           return;
         }
-        if (pVal === 'BOL' || pVal === 'BOLOVANJE' || (pVal === '00:00' && kVal === '00:01')) {
+        if (pVal === 'BOL' || smena.is_bolovanje || (pVal === '00:00' && kVal === '00:01')) {
           ukupniSati += 8;
           ukupnaZarada += 8 * parseFloat(radnik.satnica || 0) * (parseFloat(radnik.bolovanje_procenat || 65)/100);
           return;
@@ -203,38 +202,54 @@ function App() {
 
     setUcitavam(true);
     let tekuciDan = new Date(start);
+    let biloGreske = false;
+    let tekstGreske = "";
 
-    // Pretvaramo GO i BOL u vremenske formate koje baza 100% prihvata bez greške 500
-    // GO = 00:00 do 00:00
-    // BOL = 00:00 do 00:01
+    // Šaljemo format vremena koji server dokazano prihvata da izbegnemo 500 grešku
     const satPocetak = "00:00";
     const satKraj = odsustvoForm.tip === 'GO' ? "00:00" : "00:01";
 
     while (tekuciDan <= end) {
       const formatiranDatum = tekuciDan.toISOString().split('T')[0];
       
-      await fetch(`${API_URL}/raspored`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          zaposleni_id: selektovaniRadnikOdsustvo.id,
-          datum: formatiranDatum,
-          pocetak: satPocetak, 
-          kraj: satKraj
-        })
-      });
+      try {
+        const odgovor = await fetch(`${API_URL}/raspored`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            zaposleni_id: selektovaniRadnikOdsustvo.id,
+            datum: formatiranDatum,
+            pocetak: satPocetak, 
+            kraj: satKraj
+          })
+        });
+
+        if (!odgovor.ok) {
+          biloGreske = true;
+          tekstGreske = await odgovor.text();
+          break;
+        }
+      } catch (err) {
+        biloGreske = true;
+        tekstGreske = err.message;
+        break;
+      }
       tekuciDan.setDate(tekuciDan.getDate() + 1);
     }
 
     setPrikaziModalOdsustva(false);
     await ucitajPodatke();
-    alert(`Uspešno upisano odsustvo (${odsustvoForm.tip})!`);
+
+    if (biloGreske) {
+      alert(`Server je odbio upis! Detalji greške sa servera: \n\n${tekstGreske}\n\nMolimo te da podeliš ovaj tekst greške sa mnom kako bih tačno znao šta server zahteva.`);
+    } else {
+      alert(`Uspešno upisano odsustvo (${odsustvoForm.tip})!`);
+    }
   };
 
   const izracunajPlaniraneSateUNedelji = (radnikId) => {
     return raspored.filter(r => r.zaposleni_id === radnikId && trenutnaNedelja.some(n => n.formatirano === r.datum)).reduce((ukupno, smena) => {
       if (!smena || !smena.pocetak) return ukupno;
-      // Ako je GO ili BOL preko 00:00 formata, računamo standardnih 8 sati za taj dan u planeru
       if (smena.pocetak === "00:00" && (smena.kraj === "00:00" || smena.kraj === "00:01")) {
         return ukupno + 8;
       }
@@ -452,7 +467,6 @@ function App() {
                               {trenutnaNedelja.map(dan => {
                                 const smena = raspored.find(r => r.zaposleni_id === radnik.id && r.datum === dan.formatirano) || { pocetak: '', kraj: '' };
                                 
-                                // Detekcija GO / BOL na osnovu bezbednih markera vremena
                                 if (smena.pocetak === "00:00" && smena.kraj === "00:00") {
                                   return (
                                     <td key={dan.formatirano} style={{background: '#78350f', color: '#fef3c7', fontWeight: 'bold', textAlign: 'center', fontSize: '0.9rem'}}>
