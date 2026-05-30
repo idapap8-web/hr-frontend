@@ -3,6 +3,7 @@ import './App.css';
 
 const API_URL = `http://${window.location.hostname}:3000`;
 const DANI_NAZIVI = ['Pon', 'Uto', 'Sre', 'Čet', 'Pet', 'Sub', 'Ned'];
+const MESECI_NAZIVI = ['Januar', 'Februar', 'Mart', 'April', 'Maj', 'Jun', 'Jul', 'Avgust', 'Septembar', 'Oktobar', 'Novembar', 'Decembar'];
 
 const LOZINKA_ADMIN = 'menadzer2026'; 
 const LOZINKA_PREGLED = 'gledaj2026';  
@@ -31,10 +32,13 @@ function App() {
   const trenutniDatum = new Date();
   const [izabraniMesec, setIzabraniMesec] = useState(trenutniDatum.getMonth() + 1);
   const [izabranaGodina, setIzabranaGodina] = useState(trenutniDatum.getFullYear());
-  const [aktivniRadnik, setAktivniRadnik] = useState(null);
   
   const [izvestaj, setIzvestaj] = useState(null);
   const [prikaziIzvestaj, setPrikaziIzvestaj] = useState(false);
+
+  // NOVO STANOVIŠTE ZA GODIŠNJI IZVEŠTAJ
+  const [godisnjiIzvestaj, setGodisnjiIzvestaj] = useState(null);
+  const [prikaziGodisnji, setPrikaziGodisnji] = useState(false);
   
   const [prikaziKalendar, setPrikaziKalendar] = useState(false);
   const [kalendarRadnikId, setKalendarRadnikId] = useState(null);
@@ -44,15 +48,13 @@ function App() {
     const danas = new Date();
     const danUNedelji = danas.getDay();
     const razlikaDoPonedeljka = danas.getDate() - danUNedelji + (danUNedelji === 0 ? -6 : 1);
-    
     const ponedeljak = new Date(danas.setDate(razlikaDoPonedeljka));
     const datumi = [];
     
     for (let i = 0; i < 7; i++) {
       const sledeciDan = new Date(ponedeljak);
       sledeciDan.setDate(ponedeljak.getDate() + i);
-      const isoFormat = sledeciDan.toISOString().split('T')[0];
-      datumi.push({ naziv: DANI_NAZIVI[i], formatirano: isoFormat });
+      datumi.push({ naziv: DANI_NAZIVI[i], formatirano: sledeciDan.toISOString().split('T')[0] });
     }
     return datumi;
   };
@@ -66,136 +68,69 @@ function App() {
       const podaciRaspored = await fetch(`${API_URL}/raspored`).then(res => res.ok ? res.json() : []).catch(() => []);
       const podaciOdsustva = await fetch(`${API_URL}/odsustva`).then(res => res.ok ? res.json() : []).catch(() => []);
 
-      setZaposleni(Array.isArray(podaciRadnici) ? podaciRadnici : []);
-      setRaspored(Array.isArray(podaciRaspored) ? podaciRaspored : []);
-      setOdsustva(Array.isArray(podaciOdsustva) ? podaciOdsustva : []);
+      setZaposleni(podaciRadnici); setRaspored(podaciRaspored); setOdsustva(podaciOdsustva);
     } catch (err) {
-      console.error("Greška:", err);
+      console.error(err);
     } finally {
       setUcitavam(false);
     }
   };
 
-  useEffect(() => { 
-    if (isUlogovan) { ucitajPodatke(); }
-  }, [isUlogovan]);
+  useEffect(() => { if (isUlogovan) ucitajPodatke(); }, [isUlogovan]);
 
   const proveriLozinku = (e) => {
     e.preventDefault();
-    if (unosLozinke === LOZINKA_ADMIN) {
-      setTipKorisnika('admin'); setIsUlogovan(true); setGreskaLozinka(false);
-    } else if (unosLozinke === LOZINKA_PREGLED) {
-      setTipKorisnika('gost'); setIsUlogovan(true); setGreskaLozinka(false);
-    } else {
-      setGreskaLozinka(true);
-    }
+    if (unosLozinke === LOZINKA_ADMIN) { setTipKorisnika('admin'); setIsUlogovan(true); } 
+    else if (unosLozinke === LOZINKA_PREGLED) { setTipKorisnika('gost'); setIsUlogovan(true); } 
+    else { setGreskaLozinka(true); }
   };
 
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setForm(stari => ({ ...stari, [name]: value }));
-  };
+  const handleInputChange = (e) => { setForm({ ...form, [e.target.name]: e.target.value }); };
 
   const sacuvajRadnika = (e) => {
     e.preventDefault();
     const url = idZaIzmenu ? `${API_URL}/zaposleni/${idZaIzmenu}` : `${API_URL}/zaposleni`;
-    fetch(url, { 
-      method: idZaIzmenu ? 'PUT' : 'POST', 
-      headers: { 'Content-Type': 'application/json' }, 
-      body: JSON.stringify(form) 
-    }).then(() => { 
-      setForm(POCETNO_STANJE_FORME); setIdZaIzmenu(null); ucitajPodatke(); alert('Uspešno sačuvano!');
-    });
+    fetch(url, { method: idZaIzmenu ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) }).then(() => { setForm(POCETNO_STANJE_FORME); setIdZaIzmenu(null); ucitajPodatke(); alert('Sačuvano!'); });
   };
 
   const pripremiZaIzmenu = (radnik) => {
-    setForm({
-      ime: radnik.ime, prezime: radnik.prezime, pozicija: radnik.pozicija,
-      satnica: radnik.satnica || '', nocna_pocetak: radnik.nocna_pocetak || '22:00',
-      nocna_kraj: radnik.nocna_kraj || '06:00', nocni_bonus: radnik.nocni_bonus || '26',
-      praznik_bonus: radnik.praznik_bonus || '110', go_procenat: radnik.go_procenat || '100',
-      bolovanje_procenat: radnik.bolovanje_procenat || '65'
-    });
-    setIdZaIzmenu(radnik.id);
-    setAktivniTab('postavke');
-  };
-
-  const obrisiRadnika = (id) => {
-    if (window.confirm("Obrisati radnika?")) {
-      fetch(`${API_URL}/zaposleni/${id}`, { method: 'DELETE' }).then(() => ucitajPodatke());
-    }
-  };
-
-  const sacuvajOdsustvo = (e) => {
-    e.preventDefault();
-    fetch(`${API_URL}/odsustva`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ zaposleni_id: kalendarRadnikId, datum_od: novoOdsustvo.od, datum_do: novoOdsustvo.do, tip: novoOdsustvo.tip })
-    }).then(() => {
-      alert('Odsustvo zabeleženo!'); ucitajPodatke(); setPrikaziKalendar(false);
-    });
-  };
-
-  const proveriPreklapanjeOdsustva = (radnikId, datumString) => {
-    if (!Array.isArray(odsustva)) return null;
-    const targetDatum = new Date(datumString); targetDatum.setHours(0,0,0,0);
-    const aktivno = odsustva.find(o => {
-      if (!o || o.zaposleni_id !== radnikId) return false;
-      const odD = new Date(o.datum_od); odD.setHours(0,0,0,0);
-      const doD = new Date(o.datum_do); doD.setHours(0,0,0,0);
-      return targetDatum >= odD && targetDatum <= doD;
-    });
-    return aktivno ? aktivno.tip : null;
+    setForm({ ...radnik }); setIdZaIzmenu(radnik.id); setAktivniTab('postavke');
   };
 
   const sacuvajSmenu = (radnikId, datum, pocetak, kraj) => {
-    fetch(`${API_URL}/raspored`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ zaposleni_id: radnikId, datum, pocetak, kraj })
-    }).then(() => {
+    fetch(`${API_URL}/raspored`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ zaposleni_id: radnikId, datum, pocetak, kraj }) }).then(() => {
       setRaspored(stari => {
-        const ostali = (stari || []).filter(r => !(r && r.zaposleni_id === radnikId && r.datum === datum));
+        const ostali = stari.filter(r => !(r.zaposleni_id === radnikId && r.datum === datum));
         return [...ostali, { zaposleni_id: radnikId, datum, pocetak, kraj }];
       });
     });
   };
 
   const izracunajPlaniraneSateUNedelji = (radnikId) => {
-    if (!Array.isArray(raspored)) return 0;
-    return raspored
-      .filter(r => r && r.zaposleni_id === radnikId && trenutnaNedelja.some(n => n.formatirano === r.datum))
-      .reduce((ukupno, smena) => {
-        if (!smena || !smena.pocetak || !smena.kraj || ['GO','BOL'].includes(smena.pocetak.toUpperCase())) return ukupno;
-        let p = parseInt(smena.pocetak.split(':')[0]); let k = parseInt(smena.kraj.split(':')[0]);
-        if (k === 0) k = 24; return ukupno + (k > p ? k - p : 24 - p + k);
-      }, 0);
+    return raspored.filter(r => r.zaposleni_id === radnikId && trenutnaNedelja.some(n => n.formatirano === r.datum)).reduce((ukupno, smena) => {
+      if (!smena.pocetak || ['GO','BOL'].includes(smena.pocetak.toUpperCase())) return ukupno;
+      let p = parseInt(smena.pocetak.split(':')[0]); let k = parseInt(smena.kraj.split(':')[0]);
+      if (k === 0) k = 24; return ukupno + (k > p ? k - p : 24 - p + k);
+    }, 0);
   };
 
-  const generisiIzvestaj = (radnik, trazeniMesec, trazenaGodina) => {
-    setAktivniRadnik({ id: radnik.id, ime: `${radnik.ime} ${radnik.prezime}` });
-    
-    fetch(`${API_URL}/izvestaj/${radnik.id}?mesec=${trazeniMesec}&godina=${trazenaGodina}`)
-      .then(res => {
-        if (!res.ok) throw new Error();
-        return res.json();
-      })
-      .then(podaci => { 
-        setIzvestaj({ ...podaci, imeRadnika: `${radnik.ime} ${radnik.prezime}` }); 
-        setPrikaziIzvestaj(true); 
-      })
-      .catch(() => {
-        // Rezervna računica na frontu ako server uspori
-        const satnica = parseFloat(radnik.satnica || 300);
-        const sati = izracunajPlaniraneSateUNedelji(radnik.id) * 4;
-        setIzvestaj({
-          satnica, ukupnoSati: sati, nocniSati: 0, praznicniSati: 0, satiGO: 0, satiBolovanje: 0,
-          goProcenat: radnik.go_procenat, bolovanjeProcenat: radnik.bolovanje_procenat, nocniBonus: radnik.nocni_bonus,
-          zaradaOdRada: sati * satnica, zaradaGO: 0, zaradaBolovanje: 0, plata: sati * satnica,
-          imeRadnika: `${radnik.ime} ${radnik.prezime}`
-        });
+  // POZIV MESEČNOG IZVEŠTAJA (PAMTI SVE MESECE UNAZAD)
+  const ucitajMesecniIzvestaj = (radnik) => {
+    fetch(`${API_URL}/izvestaj/${radnik.id}?mesec=${izabraniMesec}&godina=${izabranaGodina}`)
+      .then(res => res.json())
+      .then(podaci => {
+        setIzvestaj({ ...podaci, imeRadnika: `${radnik.ime} ${radnik.prezime}`, mesecText: MESECI_NAZIVI[izabraniMesec-1], godinaText: izabranaGodina });
         setPrikaziIzvestaj(true);
+      });
+  };
+
+  // POZIV GODIŠNJEG IZVEŠTAJA
+  const ucitajGodisnjiIzvestaj = (radnik) => {
+    fetch(`${API_URL}/godisnji-izvestaj/${radnik.id}?godina=${izabranaGodina}`)
+      .then(res => res.json())
+      .then(podaci => {
+        setGodisnjiIzvestaj({ ...podaci, imeRadnika: `${radnik.ime} ${radnik.prezime}` });
+        setPrikaziGodisnji(true);
       });
   };
 
@@ -206,7 +141,7 @@ function App() {
           <h2>🔒 HR Menadžer Zaštita</h2>
           <form onSubmit={proveriLozinku}>
             <input type="password" placeholder="Lozinka" value={unosLozinke} onChange={(e) => setUnosLozinke(e.target.value)} required />
-            <button type="submit" className="btn-primary w-100" style={{marginTop: '1rem'}}>Pristupi</button>
+            <button type="submit" className="btn-primary w-100" style={{marginTop:'1rem'}}>Pristupi</button>
           </form>
         </div>
       </div>
@@ -221,15 +156,29 @@ function App() {
       </header>
 
       <nav className="navbar">
-        <button className={`nav-link ${aktivniTab === 'radnici' ? 'active' : ''}`} onClick={() => setAktivniTab('radnici')}>👥 Zaposleni</button>
+        <button className={`nav-link ${aktivniTab === 'radnici' ? 'active' : ''}`} onClick={() => setAktivniTab('radnici')}>👥 Zaposleni i Izvještaji</button>
         <button className={`nav-link ${aktivniTab === 'planer' ? 'active' : ''}`} onClick={() => setAktivniTab('planer')}>📅 Planer Smena</button>
         {tipKorisnika === 'admin' && <button className={`nav-link ${aktivniTab === 'postavke' ? 'active' : ''}`} onClick={() => setAktivniTab('postavke')}>⚙️ Postavke / Dodaj</button>}
       </nav>
 
+      {/* ODABIR PERIODA ZA PREGLED ISTORIJE (PAMĆENJE SATI) */}
+      {aktivniTab === 'radnici' && (
+        <div className="history-selector" style={{background:'#1e293b', padding:'1rem', borderRadius:'8px', margin:'1rem auto', maxWidth:'1200px', display:'flex', gap:'1rem', alignItems:'center', justifyContent:'center'}}>
+          <label style={{fontWeight:'bold'}}>Izaberi period za obračun:</label>
+          <select value={izabraniMesec} onChange={(e)=>setIzabraniMesec(parseInt(e.target.value))} style={{padding:'0.5rem', background:'#0f172a', color:'white', border:'1px solid #334155', borderRadius:'4px'}}>
+            {MESECI_NAZIVI.map((m, i) => <option key={i} value={i+1}>{m}</option>)}
+          </select>
+          <select value={izabranaGodina} onChange={(e)=>setIzabranaGodina(parseInt(e.target.value))} style={{padding:'0.5rem', background:'#0f172a', color:'white', border:'1px solid #334155', borderRadius:'4px'}}>
+            <option value="2025">2025</option>
+            <option value="2026">2026</option>
+            <option value="2027">2027</option>
+          </select>
+        </div>
+      )}
+
       <main className="tab-content">
         {ucitavam ? <p className="loading">Učitavanje podataka...</p> : (
           <>
-            {/* === TAB RADNICI === */}
             {aktivniTab === 'radnici' && (
               <div className="fade-in">
                 <div className="cards-grid">
@@ -237,17 +186,20 @@ function App() {
                     <div key={radnik.id} className="worker-card">
                       <h2>{radnik.ime} {radnik.prezime}</h2>
                       <div className="worker-role">{radnik.pozicija}</div>
-                      <div style={{fontSize:'0.9rem', color:'#94a3b8', margin:'0.5rem 0'}}>Satnica: {radnik.satnica} RSD | Noćni rad: +{radnik.nocni_bonus}%</div>
                       
-                      <div className="card-footer-buttons" style={{marginTop:'1rem'}}>
-                        <button onClick={() => { setKalendarRadnikId(radnik.id); setPrikaziKalendar(true); }} className="btn-outline info">📅 Odsustvo</button>
-                        <button onClick={() => generisiIzvestaj(radnik, izabraniMesec, izabranaGodina)} className="btn-action dark">📊 Obračun plate</button>
+                      <div style={{display:'flex', flexDirection:'column', gap:'0.5rem', marginTop:'1rem'}}>
+                        <button onClick={() => ucitajMesecniIzvestaj(radnik)} className="btn-action info" style={{background:'#0284c7'}}>
+                          📊 Mesečni Izveštaj ({MESECI_NAZIVI[izabraniMesec-1]})
+                        </button>
+                        <button onClick={() => ucitajGodisnjiIzvestaj(radnik)} className="btn-action dark" style={{background:'#475569'}}>
+                          📅 Godišnji Izveštaj ({izabranaGodina})
+                        </button>
                       </div>
 
                       {tipKorisnika === 'admin' && (
-                        <div className="card-footer-buttons" style={{marginTop:'0.5rem'}}>
-                          <button onClick={() => pripremiZaIzmenu(radnik)} className="btn-outline info" style={{borderColor:'#10b981', color:'#10b981'}}>Izmeni</button>
-                          <button onClick={() => obrisiRadnika(radnik.id)} className="btn-outline danger">Obriši</button>
+                        <div className="card-footer-buttons" style={{marginTop:'0.8rem'}}>
+                          <button onClick={() => pripremiZaIzmenu(radnik)} className="btn-outline info" style={{color:'#10b981', borderColor:'#10b981'}}>Izmeni</button>
+                          <button onClick={() => { if(confirm("Obrisati?")) fetch(`${API_URL}/zaposleni/${radnik.id}`, {method:'DELETE'}).then(()=>ucitajPodatke()); }} className="btn-outline danger">Obriši</button>
                         </div>
                       )}
                     </div>
@@ -256,7 +208,7 @@ function App() {
               </div>
             )}
 
-            {/* === TAB PLANER === */}
+            {/* === PLANER === */}
             {aktivniTab === 'planer' && (
               <div className="fade-in">
                 <div className="table-container">
@@ -271,16 +223,15 @@ function App() {
                       </thead>
                       <tbody>
                         {zaposleni.map(radnik => radnik && (
-                          <tr key={`planer-${radnik.id}`}>
+                          <tr key={radnik.id}>
                             <td className="text-left font-light">{radnik.ime} {radnik.prezime}</td>
                             {trenutnaNedelja.map(dan => {
-                              const smena = (raspored || []).find(r => r && r.zaposleni_id === radnik.id && r.datum === dan.formatirano) || { pocetak: '', kraj: '' };
-                              const imaOdsustvo = proveriPreklapanjeOdsustva(radnik.id, dan.formatirano);
+                              const smena = raspored.find(r => r.zaposleni_id === radnik.id && r.datum === dan.formatirano) || { pocetak: '', kraj: '' };
                               return (
                                 <td key={dan.formatirano}>
                                   <div className="table-inputs-group">
-                                    <input type="text" value={smena.pocetak || ''} onChange={(e) => sacuvajSmenu(radnik.id, dan.formatirano, e.target.value, smena.kraj)} placeholder={imaOdsustvo ? imaOdsustvo : "08:00"} />
-                                    <input type="text" value={smena.kraj || ''} onChange={(e) => sacuvajSmenu(radnik.id, dan.formatirano, smena.pocetak, e.target.value)} placeholder={imaOdsustvo ? "SLOB" : "16:00"} />
+                                    <input type="text" value={smena.pocetak || ''} onChange={(e) => sacuvajSmenu(radnik.id, dan.formatirano, e.target.value, smena.kraj)} placeholder="08:00" />
+                                    <input type="text" value={smena.kraj || ''} onChange={(e) => sacuvajSmenu(radnik.id, dan.formatirano, smena.pocetak, e.target.value)} placeholder="16:00" />
                                   </div>
                                 </td>
                               );
@@ -295,56 +246,15 @@ function App() {
               </div>
             )}
 
-            {/* === TAB POSTAVKE (POTPUNA FORMA) === */}
+            {/* === POSTAVKE === */}
             {aktivniTab === 'postavke' && (
               <div className="fade-in">
-                <form onSubmit={sacuvajRadnika} className="hr-form" style={{maxWidth:'700px', margin:'0 auto'}}>
-                  <h3>{idZaIzmenu ? 'Izmeni podatke o radniku' : 'Dodaj novog radnika u sistem'}</h3>
-                  
-                  <div className="form-row">
-                    <input name="ime" placeholder="Ime" value={form.ime} onChange={handleInputChange} required />
-                    <input name="prezime" placeholder="Prezime" value={form.prezime} onChange={handleInputChange} required />
-                    <input name="pozicija" placeholder="Pozicija" value={form.pozicija} onChange={handleInputChange} required />
-                  </div>
-                  
-                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'1rem', marginTop:'1rem'}}>
-                    <div>
-                      <label>Satnica (RSD):</label>
-                      <input type="number" name="satnica" value={form.satnica} onChange={handleInputChange} required />
-                    </div>
-                    <div>
-                      <label>Noćna počinje od:</label>
-                      <input type="time" name="nocna_pocetak" value={form.nocna_pocetak} onChange={handleInputChange} />
-                    </div>
-                    <div>
-                      <label>Noćna traje do:</label>
-                      <input type="time" name="nocna_kraj" value={form.nocna_kraj} onChange={handleInputChange} />
-                    </div>
-                  </div>
-
-                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr', gap:'1rem', marginTop:'1rem'}}>
-                    <div>
-                      <label>Noćni bonus (%):</label>
-                      <input type="number" name="nocni_bonus" value={form.nocni_bonus} onChange={handleInputChange} />
-                    </div>
-                    <div>
-                      <label>Praznik bonus (%):</label>
-                      <input type="number" name="praznik_bonus" value={form.praznik_bonus} onChange={handleInputChange} />
-                    </div>
-                    <div>
-                      <label>Godišnji odmor (%):</label>
-                      <input type="number" name="go_procenat" value={form.go_procenat} onChange={handleInputChange} />
-                    </div>
-                    <div>
-                      <label>Bolovanje (%):</label>
-                      <input type="number" name="bolovanje_procenat" value={form.bolovanje_procenat} onChange={handleInputChange} />
-                    </div>
-                  </div>
-
-                  <div style={{marginTop:'1.5rem', display:'flex', gap:'1rem'}}>
-                    <button type="submit" className="btn-primary">Sačuj profil radnika</button>
-                    {idZaIzmenu && <button type="button" className="btn-secondary" onClick={() => { setForm(POCETNO_STANJE_FORME); setIdZaIzmenu(null); }}>Odustani</button>}
-                  </div>
+                <form onSubmit={sacuvajRadnika} className="hr-form" style={{maxWidth:'600px', margin:'0 auto'}}>
+                  <input name="ime" placeholder="Ime" value={form.ime} onChange={handleInputChange} required />
+                  <input name="prezime" placeholder="Prezime" value={form.prezime} onChange={handleInputChange} required />
+                  <input name="pozicija" placeholder="Pozicija" value={form.pozicija} onChange={handleInputChange} required />
+                  <input type="number" name="satnica" placeholder="Satnica (RSD)" value={form.satnica} onChange={handleInputChange} required />
+                  <button type="submit" className="btn-primary" style={{marginTop:'1rem'}}>Sačuvaj Radnika</button>
                 </form>
               </div>
             )}
@@ -352,54 +262,71 @@ function App() {
         )}
       </main>
 
-      {/* MODAL ZA ODSUSTVA */}
-      {prikaziKalendar && (
+      {/* === MODAL ZA MESEČNI IZVEŠTAJ (PAMTI ISTORIJU) === */}
+      {prikaziIzvestaj && izvestaj && (
         <div className="modal-overlay">
-          <div className="modal-content">
-            <h2>Evidencija Odsustva</h2>
-            <form onSubmit={sacuvajOdsustvo} className="modal-form">
-              <select value={novoOdsustvo.tip} onChange={(e)=>setNovoOdsustvo({...novoOdsustvo, tip: e.target.value})}>
-                <option value="GO">Godišnji odmor (GO)</option>
-                <option value="BOLOVANJE">Bolovanje (BOL)</option>
-              </select>
-              <input type="date" required value={novoOdsustvo.od} onChange={(e)=>setNovoOdsustvo({...novoOdsustvo, od: e.target.value})} />
-              <input type="date" required value={novoOdsustvo.do} onChange={(e)=>setNovoOdsustvo({...novoOdsustvo, do: e.target.value})} />
-              <div className="modal-buttons">
-                <button type="submit" className="btn-action info">Upiši</button>
-                <button type="button" className="btn-action dark" onClick={() => setPrikaziKalendar(false)}>Zatvori</button>
-              </div>
-            </form>
+          <div className="modal-content" style={{maxWidth:'500px', background:'#111827', padding:'2rem', borderRadius:'12px'}}>
+            <h2>Mesečni Obračun Zarade</h2>
+            <div style={{color:'#38bdf8', fontSize:'1.2rem', fontWeight:'bold'}}>{izvestaj.imeRadnika}</div>
+            <div style={{color:'#94a3b8', fontSize:'0.9rem', marginBottom:'1rem'}}>Period: {izvestaj.mesecText} / {izvestaj.godinaText}.</div>
+            
+            <div style={{background:'#1f2937', padding:'1rem', borderRadius:'8px', display:'flex', flexDirection:'column', gap:'0.5rem'}}>
+              <div style={{display:'flex', justifyContent:'space-between'}}><span>Osnovna satnica:</span> <strong>{izvestaj.satnica} RSD</strong></div>
+              <div style={{display:'flex', justifyContent:'space-between'}}><span>Ukupno sati rada:</span> <strong>{izvestaj.ukupnoSati} h</strong></div>
+              <div style={{display:'flex', justifyContent:'space-between'}}><span>Noćni sati (+{izvestaj.nocniBonus}%):</span> <strong>{izvestaj.nocniSati} h</strong></div>
+              <div style={{display:'flex', justifyContent:'space-between'}}><span>Godišnji odmor:</span> <strong>{izvestaj.satiGO} h ({izvestaj.zaradaGO} RSD)</strong></div>
+              <div style={{display:'flex', justifyContent:'space-between'}}><span>Bolovanje:</span> <strong>{izvestaj.satiBolovanje} h ({izvestaj.zaradaBolovanje} RSD)</strong></div>
+            </div>
+
+            <div style={{background:'#0284c7', padding:'1rem', borderRadius:'8px', textAlign:'center', marginTop:'1rem'}}>
+              <div>UKUPNO ZA ISPLATU</div>
+              <div style={{fontSize:'2rem', fontWeight:'bold'}}>{izvestaj.plata} RSD</div>
+            </div>
+            <button onClick={()=>setPrikaziIzvestaj(false)} className="btn-action dark w-100" style={{marginTop:'1rem'}}>Zatvori</button>
           </div>
         </div>
       )}
 
-      {/* === KOMPLETAN I DETALJAN MODAL ZA IZVEŠTAJ ZARADE === */}
-      {prikaziIzvestaj && izvestaj && (
+      {/* === NOVO: MODAL ZA GODIŠNJI PREGLED === */}
+      {prikaziGodisnji && godisnjiIzvestaj && (
         <div className="modal-overlay">
-          <div className="modal-content" style={{maxWidth:'550px', background:'#111827', color:'white', borderRadius:'12px', padding:'2rem'}}>
-            <h2 style={{margin:0, fontSize:'1.6rem'}}>Automatski Obračun Plate</h2>
-            <div style={{fontSize: '1.3rem', fontWeight: 'bold', color: '#38bdf8', marginBottom: '1.5rem'}}>{izvestaj.imeRadnika}</div>
+          <div className="modal-content" style={{maxWidth:'600px', background:'#111827', padding:'2rem', borderRadius:'12px'}}>
+            <h2>Godišnji Izveštaj Poslovanja ({godisnjiIzvestaj.godina})</h2>
+            <div style={{color:'#38bdf8', fontSize:'1.2rem', fontWeight:'bold', marginBottom:'1rem'}}>{godisnjiIzvestaj.imeRadnika}</div>
             
-            <div style={{display:'flex', flexDirection:'column', gap:'0.6rem', background:'#1f2937', padding:'1.2rem', borderRadius:'8px', marginBottom:'1rem'}}>
-              <div style={{display:'flex', justifyContent:'space-between'}}><span>Osnovna satnica:</span> <strong>{izvestaj.satnica} RSD</strong></div>
-              <div style={{display:'flex', justifyContent:'space-between'}}><span>Ukupno odrađeno sati:</span> <strong>{izvestaj.ukupnoSati} h</strong></div>
-              <div style={{display:'flex', justifyContent:'space-between', color:'#f43f5e'}}><span>Od toga noćni sati (+{izvestaj.nocniBonus}%):</span> <strong>{izvestaj.nocniSati} h</strong></div>
-              <div style={{display:'flex', justifyContent:'space-between', color:'#34d399'}}><span>Praznični sati (+{izvestaj.praznikBonus}%):</span> <strong>{izvestaj.praznicniSati} h</strong></div>
-              <div style={{height:'1px', background:'#374151', margin:'0.3rem 0'}}></div>
-              <div style={{display:'flex', justifyContent:'space-between', fontWeight:'bold'}}><span>Zarada od rada:</span> <span>{izvestaj.zaradaOdRada} RSD</span></div>
+            <div style={{maxHeight:'250px', overflowY:'auto', background:'#1f2937', borderRadius:'8px', padding:'0.5rem', marginBottom:'1rem'}}>
+              <table style={{width:'100%', borderCollapse:'collapse'}}>
+                <thead>
+                  <tr style={{borderBottom:'2px solid #374151', textTransform:'uppercase', fontSize:'0.8rem', color:'#94a3b8'}}>
+                    <th style={{textAlign:'left', padding:'0.5rem'}}>Mesec</th>
+                    <th style={{textAlign:'center', padding:'0.5rem'}}>Sati</th>
+                    <th style={{textAlign:'right', padding:'0.5rem'}}>Isplata</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {godisnjiIzvestaj.poMesecima.map((m, i) => (
+                    <tr key={i} style={{borderBottom:'1px solid #374151', fontSize:'0.95rem'}}>
+                      <td style={{padding:'0.5rem', textAlign:'left'}}>{MESECI_NAZIVI[m.mesec-1]}</td>
+                      <td style={{padding:'0.5rem', textAlign:'center', color:'#94a3b8'}}>{m.sati} h</td>
+                      <td style={{padding:'0.5rem', textAlign:'right', fontWeight:'bold', color:'#34d399'}}>{m.zarada} RSD</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
 
-            <div style={{display:'flex', flexDirection:'column', gap:'0.6rem', background:'#1f2937', padding:'1.2rem', borderRadius:'8px', marginBottom:'1.5rem'}}>
-              <div style={{display:'flex', justifyContent:'space-between', color:'#fbbf24'}}><span>Godišnji odmor ({izvestaj.goProcenat}%):</span> <strong>{izvestaj.satiGO} h ({izvestaj.zaradaGO} RSD)</strong></div>
-              <div style={{display:'flex', justifyContent:'space-between', color:'#f87171'}}><span>Bolovanje ({izvestaj.bolovanjeProcenat}%):</span> <strong>{izvestaj.satiBolovanje} h ({izvestaj.zaradaBolovanje} RSD)</strong></div>
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'1rem', background:'#0f172a', padding:'1rem', borderRadius:'8px', textAlign:'center'}}>
+              <div>
+                <div style={{fontSize:'0.8rem', color:'#94a3b8'}}>UKUPNO SATI / GODINA</div>
+                <div style={{fontSize:'1.3rem', fontWeight:'bold', color:'#38bdf8'}}>{godisnjiIzvestaj.ukupnoSatiGodina} h</div>
+              </div>
+              <div>
+                <div style={{fontSize:'0.8rem', color:'#94a3b8'}}>UKUPNO ISPLAĆENO / GODINA</div>
+                <div style={{fontSize:'1.3rem', fontWeight:'bold', color:'#10b981'}}>{godisnjiIzvestaj.ukupnoZaradaGodina} RSD</div>
+              </div>
             </div>
 
-            <div style={{background: '#0284c7', padding: '1.2rem', borderRadius: '8px', textAlign: 'center'}}>
-              <div style={{textTransform: 'uppercase', fontSize: '0.85rem', opacity: 0.9, letterSpacing:'1px'}}>Ukupno za isplatu</div>
-              <div style={{fontSize: '2.3rem', fontWeight: 'bold', marginTop:'0.2rem'}}>{izvestaj.plata} RSD</div>
-            </div>
-
-            <button onClick={() => setPrikaziIzvestaj(false)} className="btn-action dark w-100" style={{marginTop: '1.5rem', background:'#374151'}}>Zatvori obračun</button>
+            <button onClick={()=>setPrikaziGodisnji(false)} className="btn-action dark w-100" style={{marginTop:'1.5rem', background:'#374151'}}>Zatvori godišnji izveštaj</button>
           </div>
         </div>
       )}
