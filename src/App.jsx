@@ -4,6 +4,9 @@ import './App.css';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 const DANI_NAZIVI = ['Pon', 'Uto', 'Sre', 'Čet', 'Pet', 'Sub', 'Ned'];
 
+// Tvoja tajna menadžerska lozinka (promeni ovde ako želiš drugu)
+const LOZINKA_ZA_PRISTUP = 'menadzer2026';
+
 const POCETNO_STANJE_FORME = {
   ime: '', prezime: '', pozicija: '', satnica: '',
   nocna_pocetak: '22:00', nocna_kraj: '06:00', nocni_bonus: '26',
@@ -11,8 +14,13 @@ const POCETNO_STANJE_FORME = {
 };
 
 function App() {
+  // --- LOGIN STATE ---
+  const [isUlogovan, setIsUlogovan] = useState(false);
+  const [unosLozinke, setUnosLozinke] = useState('');
+  const [greskaLozinka, setGreskaLozinka] = useState(false);
+
   // --- STATE ZA NAVIGACIJU ---
-  const [aktivniTab, setAktivniTab] = useState('radnici'); // Može biti: 'radnici', 'planer', 'postavke'
+  const [aktivniTab, setAktivniTab] = useState('radnici');
 
   const [zaposleni, setZaposleni] = useState([]);
   const [raspored, setRaspored] = useState([]); 
@@ -70,7 +78,23 @@ function App() {
     }
   };
 
-  useEffect(() => { ucitajPodatke(); }, []);
+  // Učitaj podatke samo ako je korisnik uspešno ukucao lozinku
+  useEffect(() => { 
+    if (isUlogovan) {
+      ucitajPodatke(); 
+    }
+  }, [isUlogovan]);
+
+  // Provera unete lozinke
+  const proveriLozinku = (e) => {
+    e.preventDefault();
+    if (unosLozinke === LOZINKA_ZA_PRISTUP) {
+      setIsUlogovan(true);
+      setGreskaLozinka(false);
+    } else {
+      setGreskaLozinka(true);
+    }
+  };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -127,10 +151,6 @@ function App() {
       setPrikaziKalendar(false);
       setNovoOdsustvo({ od: '', do: '', tip: 'GO' });
     });
-  };
-
-  const obrisiOdsustvo = (id) => {
-    fetch(`${API_URL}/odsustva/${id}`, { method: 'DELETE' }).then(() => ucitajPodatke());
   };
 
   const proveriPreklapanjeOdsustva = (radnikId, datumString) => {
@@ -192,14 +212,38 @@ function App() {
       .catch(() => alert("Greška pri generisanju izveštaja."));
   };
 
+  // --- RENDEROVANJE LOGIN EKRANA AKO KORISNIK NIJE ULOGOVAN ---
+  if (!isUlogovan) {
+    return (
+      <div className="login-overlay">
+        <div className="login-box">
+          <h2>🔒 HR Menadžer Zaštita</h2>
+          <p>Unesite menadžersku lozinku za pristup podacima firme.</p>
+          <form onSubmit={proveriLozinku}>
+            <input 
+              type="password" 
+              placeholder="Lozinka" 
+              value={unosLozinke} 
+              onChange={(e) => setUnosLozinke(e.target.value)} 
+              required
+            />
+            {greskaLozinka && <p className="login-error">❌ Pogrešna lozinka. Pokušajte ponovo.</p>}
+            <button type="submit" className="btn-primary w-100" style={{marginTop: '1rem'}}>Pristupi aplikaciji</button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // --- GLAVNA APLIKACIJA AKO JE LOZINKA TAČNA ---
   return (
     <div className="app-container">
       <header className="app-header">
         <h1>HR Menadžer Pro</h1>
         <p>Sistem za planiranje rada i automatski obračun</p>
+        <button className="btn-logout" onClick={() => { setIsUlogovan(false); setUnosLozinke(''); }}>🚪 Odjavi se</button>
       </header>
 
-      {/* --- LEPI NAVIGACIONI BAR --- */}
       <nav className="navbar">
         <button className={`nav-link ${aktivniTab === 'radnici' ? 'active' : ''}`} onClick={() => setAktivniTab('radnici')}>
           👥 Zaposleni
@@ -215,7 +259,6 @@ function App() {
       <main className="tab-content">
         {ucitavam ? <p className="loading">Učitavanje podataka...</p> : (
           <>
-            {/* === TAB 1: ZAPOSLENI === */}
             {aktivniTab === 'radnici' && (
               <div className="fade-in">
                 <div className="section-header-box">
@@ -224,7 +267,7 @@ function App() {
                 </div>
                 
                 <div className="cards-grid">
-                  {zaposleni.map((radnik) => (
+                  {zolds = zaposleni.map((radnik) => (
                     <div key={radnik.id} className="worker-card">
                       <h2>{radnik.ime} {radnik.prezime}</h2>
                       <div className="worker-role">{radnik.pozicija}</div>
@@ -247,7 +290,6 @@ function App() {
               </div>
             )}
 
-            {/* === TAB 2: PLANER SMENA === */}
             {aktivniTab === 'planer' && (
               <div className="fade-in">
                 <div className="table-container">
@@ -321,7 +363,6 @@ function App() {
               </div>
             )}
 
-            {/* === TAB 3: POSTAVKE / UPRAVLJANJE === */}
             {aktivniTab === 'postavke' && (
               <div className="fade-in">
                 <form onSubmit={sacuvajRadnika} className="hr-form">
@@ -381,7 +422,6 @@ function App() {
         )}
       </main>
 
-      {/* --- MODALI (KALENDAR I IZVEŠTAJ) OSTAJU FIKSIRANI --- */}
       {prikaziKalendar && (
         <div className="modal-overlay">
           <div className="modal-content">
