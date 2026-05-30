@@ -561,3 +561,29 @@ th { color: var(--text-muted); font-weight: 600; font-size: 0.85rem; }
   color: var(--danger);
   border-color: var(--danger);
 }
+/* === RESPONSIVE STILOVI ZA MOBILNE TELEFONE === */
+@media (max-width: 768px) {
+  .cards-grid {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 15px !important;
+    padding: 10px !important;
+    width: 100% !important;
+    box-sizing: border-box;
+  }
+
+  .worker-card {
+    width: 100% !important;
+    max-width: 100% !important;
+    display: block !important; /* Osigurava da kartica nije skrivena */
+    opacity: 1 !important;     /* Osigurava vidljivost ako je aktivna neka animacija */
+    box-sizing: border-box;
+    margin-bottom: 10px;
+  }
+  
+  .tab-content {
+    padding: 10px !important;
+    width: 100% !important;
+    overflow-x: hidden;
+  }
+}
