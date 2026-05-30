@@ -4,7 +4,8 @@ import './App.css';
 import html2pdf from 'html2pdf.js';
 import * as XLSX from 'xlsx';
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://hr-backend-1-heqi.onrender.com';
+// Podešeno na tvoj lokalni server na računaru
+const API_URL = 'http://localhost:3000';
 const DANI_NAZIVI = ['Pon', 'Uto', 'Sre', 'Čet', 'Pet', 'Sub', 'Ned'];
 
 // Tvoja tajna menadžerska lozinka
@@ -64,6 +65,7 @@ function App() {
 
   const [trenutnaNedelja] = useState(uzmiDatumeTekuceNedelje());
 
+  // MAKSIMALNO BEZBEDNO UCITAVANJE KOJE SPREČAVA PAD NA .MAP()
   const ucitajPodatke = async () => {
     try {
       const [resZaposleni, resRaspored, resOdsustva] = await Promise.all([
@@ -71,11 +73,20 @@ function App() {
         fetch(`${API_URL}/raspored`),
         fetch(`${API_URL}/odsustva`)
       ]);
-      setZaposleni(await resZaposleni.json());
-      setRaspored(await resRaspored.json());
-      setOdsustva(await resOdsustva.json());
+      
+      const podaciZaposleni = await resZaposleni.json();
+      const podaciRaspored = await resRaspored.json();
+      const podaciOdsustva = await resOdsustva.json();
+
+      // Provera da li su vraćeni nizovi kako ne bi došlo do pucanja aplikacije
+      setZaposleni(Array.isArray(podaciZaposleni) ? podaciZaposleni : []);
+      setRaspored(Array.isArray(podaciRaspored) ? podaciRaspored : []);
+      setOdsustva(Array.isArray(podaciOdsustva) ? podaciOdsustva : []);
     } catch (err) {
-      console.error("Greška:", err);
+      console.error("Greška pri komunikaciji sa serverom:", err);
+      setZaposleni([]);
+      setRaspored([]);
+      setOdsustva([]);
     } finally {
       setUcitavam(false);
     }
@@ -227,14 +238,13 @@ function App() {
     html2pdf().set(opt).from(element).save();
   };
 
-  // --- FUNKCIJA ZA PREUZIMANJE EXCEL-a ---
+  // --- FUNKCIJA ZA PREUZIMANJE EXCEL-a (ISPRAVLJENO SVE) ---
   const preuzmiExcelIzvestaj = () => {
-    // Priprema strukturisanih podataka za knjigovodstvo
     const podaciZaExcel = [
       { "Stavka": "Zaposleni", "Vrednost / Iznos": izvestaj.imeRadnika },
       { "Stavka": "Period", "Vrednost / Iznos": `${izabraniMesec} / ${izabranaGodina}` },
       { "Stavka": "Osnovna satnica", "Vrednost / Iznos": `${izvestaj.satnica} RSD` },
-      { "Stavka": "", "Vrednost / Iznos": "" }, // Prazan red za preglednost
+      { "Stavka": "", "Vrednost / Iznos": "" }, 
       { "Stavka": "Odrađeni redovni/noćni sati", "Vrednost / Iznos": `${izvestaj.ukupnoSati} h` },
       { "Stavka": "Od toga noćni rad", "Vrednost / Iznos": `${izvestaj.nocniSati} h` },
       { "Stavka": "ZARADA OD RADA", "Vrednost / Iznos": `${izvestaj.zaradaOdRada} RSD` },
@@ -242,22 +252,19 @@ function App() {
       { "Stavka": "Sati Godišnjeg odmora (GO)", "Vrednost / Iznos": `${izvestaj.satiGO} h` },
       { "Stavka": "Naknada za GO", "Vrednost / Iznos": `${izvestaj.zaradaGO} RSD` },
       { "Stavka": "", "Vrednost / Iznos": "" },
-      { "Stavka": "Sati Bolovanja", "Vrednost / Iznos": `${izvestaj.satiBolovanje} h` },
+      { "Stavka": "Sati Bolovanja", "Vrednost / Iznos": `${izvestaj.satiGO || izvestaj.satiBolovanje} h` },
       { "Stavka": "Naknada za Bolovanje", "Vrednost / Iznos": `${izvestaj.zaradaBolovanje} RSD` },
       { "Stavka": "", "Vrednost / Iznos": "" },
       { "Stavka": "UKUPNO ZA ISPLATU", "Vrednost / Iznos": `${izvestaj.plata} RSD` }
     ];
 
-    // Kreiranje radne sveske (workbook) i tabele (worksheet)
     const worksheet = XLSX.utils.json_to_sheet(podaciZaExcel);
     const workbook = XLSX.utils.book_new();
-    XXLSX.utils.book_append_sheet(workbook, worksheet, "Obracun Zarade");
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Obracun Zarade");
 
-    // Prilagođavanje širine kolona da tekst ne bude odsečen
     worksheet['!cols'] = [{ wch: 30 }, { wch: 25 }];
 
-    // Generisanje i preuzimanje fajla
-    XXLSX.writeFile(workbook, `Obracun_${izvestaj.imeRadnika.replace(' ', '_')}_${izabraniMesec}_${izabranaGodina}.xlsx`);
+    XLSX.writeFile(workbook, `Obracun_${izvestaj.imeRadnika.replace(' ', '_')}_${izabraniMesec}_${izabranaGodina}.xlsx`);
   };
 
   // --- RENDEROVANJE LOGIN EKRANA ---
@@ -508,7 +515,6 @@ function App() {
         <div className="modal-overlay">
           <div className="modal-content scrollable-y">
             
-            {/* Dodajemo jedinstveni ID oko samog teksta izveštaja koji se snima u PDF */}
             <div id="print-report-area" style={{ padding: '10px', background: '#1e293b', borderRadius: '8px' }}>
               <h2>Automatski Izveštaj Zarade</h2>
               <div className="modal-subtitle">{izvestaj.imeRadnika}</div>
@@ -547,7 +553,7 @@ function App() {
               </div>
             </div>
 
-            {/* === DUGMIĆI ZA EKSPORT (sa tagom ignore za html2pdf da ne uđu u sam PDF) === */}
+            {/* DUGMIĆI ZA PREUZIMANJE */}
             <div className="export-buttons-group" style={{ display: 'flex', gap: '10px', margin: '15px 0' }}>
               <button onClick={preuzmiPDFIzvestaj} className="btn-action info" style={{ flex: 1, background: '#0284c7' }}>
                 📄 Preuzmi PDF
