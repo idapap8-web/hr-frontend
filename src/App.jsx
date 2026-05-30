@@ -4,7 +4,7 @@ import './App.css';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 const DANI_NAZIVI = ['Pon', 'Uto', 'Sre', 'Čet', 'Pet', 'Sub', 'Ned'];
 
-// Tvoja tajna menadžerska lozinka (promeni ovde ako želiš drugu)
+// Tvoja tajna menadžerska lozinka
 const LOZINKA_ZA_PRISTUP = 'menadzer2026';
 
 const POCETNO_STANJE_FORME = {
@@ -212,7 +212,7 @@ function App() {
       .catch(() => alert("Greška pri generisanju izveštaja."));
   };
 
-  // --- RENDEROVANJE LOGIN EKRANA AKO KORISNIK NIJE ULOGOVAN ---
+  // --- RENDEROVANJE LOGIN EKRANA ---
   if (!isUlogovan) {
     return (
       <div className="login-overlay">
@@ -235,7 +235,7 @@ function App() {
     );
   }
 
-  // --- GLAVNA APLIKACIJA AKO JE LOZINKA TAČNA ---
+  // --- GLAVNA APLIKACIJA NAKON LOGOVANJA ---
   return (
     <div className="app-container">
       <header className="app-header">
@@ -259,6 +259,7 @@ function App() {
       <main className="tab-content">
         {ucitavam ? <p className="loading">Učitavanje podataka...</p> : (
           <>
+            {/* === TAB 1: ZAPOSLENI === */}
             {aktivniTab === 'radnici' && (
               <div className="fade-in">
                 <div className="section-header-box">
@@ -267,7 +268,7 @@ function App() {
                 </div>
                 
                 <div className="cards-grid">
-                  {zolds = zaposleni.map((radnik) => (
+                  {zaposleni.map((radnik) => (
                     <div key={radnik.id} className="worker-card">
                       <h2>{radnik.ime} {radnik.prezime}</h2>
                       <div className="worker-role">{radnik.pozicija}</div>
@@ -290,6 +291,7 @@ function App() {
               </div>
             )}
 
+            {/* === TAB 2: PLANER === */}
             {aktivniTab === 'planer' && (
               <div className="fade-in">
                 <div className="table-container">
@@ -363,6 +365,7 @@ function App() {
               </div>
             )}
 
+            {/* === TAB 3: POSTAVKE === */}
             {aktivniTab === 'postavke' && (
               <div className="fade-in">
                 <form onSubmit={sacuvajRadnika} className="hr-form">
@@ -422,6 +425,7 @@ function App() {
         )}
       </main>
 
+      {/* --- MODAL ZA KALENDAR ODSUSTVA --- */}
       {prikaziKalendar && (
         <div className="modal-overlay">
           <div className="modal-content">
@@ -451,6 +455,7 @@ function App() {
         </div>
       )}
 
+      {/* --- MODAL ZA IZVEŠTAJ ZARADE --- */}
       {prikaziIzvestaj && izvestaj && (
         <div className="modal-overlay">
           <div className="modal-content scrollable-y">
