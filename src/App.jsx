@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import './App.css';
 
-// AUTOMATSKO PREPOZNAVANJE RAČUNARA
 const API_URL = `http://${window.location.hostname}:3000`;
 const DANI_NAZIVI = ['Pon', 'Uto', 'Sre', 'Čet', 'Pet', 'Sub', 'Ned'];
 
@@ -61,23 +60,29 @@ function App() {
   const [trenutnaNedelja] = useState(uzmiDatumeTekuceNedelje());
 
   const ucitajPodatke = async () => {
+    setUcitavam(true);
     try {
-      console.log("Pokrećem učitavanje sa adrese:", API_URL);
-      const [resZaposleni, resRaspored, resOdsustva] = await Promise.all([
-        fetch(`${API_URL}/zaposleni`).catch(e => { console.error("Greška zaposleni:", e); return { json: () => [] }; }),
-        fetch(`${API_URL}/raspored`).catch(e => { console.error("Greška raspored:", e); return { json: () => [] }; }),
-        fetch(`${API_URL}/odsustva`).catch(e => { console.error("Greška odsustva:", e); return { json: () => [] }; })
-      ]);
-      
-      const podaciRadnici = Array.isArray(resZaposleni) ? resZaposleni : await resZaposleni.json();
-      const podaciRaspored = Array.isArray(resRaspored) ? resRaspored : await resRaspored.json();
-      const podaciOdsustva = Array.isArray(resOdsustva) ? resOdsustva : await resOdsustva.json();
+      // SVAKI FETCH IMA SVOJ CATCH: Ako server vrati 500, React pretvara to u siguran prazan niz []
+      const podaciRadnici = await fetch(`${API_URL}/zaposleni`)
+        .then(res => res.ok ? res.json() : [])
+        .catch(() => []);
+
+      const podaciRaspored = await fetch(`${API_URL}/raspored`)
+        .then(res => res.ok ? res.json() : [])
+        .catch(() => []);
+
+      const podaciOdsustva = await fetch(`${API_URL}/odsustva`)
+        .then(res => res.ok ? res.json() : [])
+        .catch(() => []);
 
       setZaposleni(Array.isArray(podaciRadnici) ? podaciRadnici : []);
       setRaspored(Array.isArray(podaciRaspored) ? podaciRaspored : []);
       setOdsustva(Array.isArray(podaciOdsustva) ? podaciOdsustva : []);
     } catch (err) {
-      console.error("Glavna greška pri učitavanju:", err);
+      console.error("Greška pri učitavanju:", err);
+      setZaposleni([]);
+      setRaspored([]);
+      setOdsustva([]);
     } finally {
       setUcitavam(false);
     }
@@ -140,7 +145,7 @@ function App() {
 
   const obrisiRadnika = (id) => {
     if (tipKorisnika !== 'admin') return;
-    if (window.confirm("Obbrisati radnika?")) {
+    if (window.confirm("Obrisati radnika?")) {
       fetch(`${API_URL}/zaposleni/${id}`, { method: 'DELETE' }).then(() => ucitajPodatke());
     }
   };
@@ -166,12 +171,12 @@ function App() {
   };
 
   const proveriPreklapanjeOdsustva = (radnikId, datumString) => {
-    if (!Array.isArray(odsustva)) return null;
+    if (!Array.isArray(odsustva) || odsustva.length === 0) return null;
     const targetDatum = new Date(datumString);
     targetDatum.setHours(0, 0, 0, 0);
 
     const aktivnoOdsustvo = odsustva.find(o => {
-      if (o.zaposleni_id !== radnikId) return false;
+      if (!o || o.zaposleni_id !== radnikId) return false;
       const odDat = new Date(o.datum_od); odDat.setHours(0, 0, 0, 0);
       const doDat = new Date(o.datum_do); doDat.setHours(0, 0, 0, 0);
       return targetDatum >= odDat && targetDatum <= doDat;
@@ -193,18 +198,18 @@ function App() {
       body: JSON.stringify({ zaposleni_id: radnikId, datum, pocetak, kraj })
     }).then(() => {
       setRaspored(stari => {
-        const ostali = stari.filter(r => !(r.zaposleni_id === radnikId && r.datum === datum));
+        const ostali = (stari || []).filter(r => !(r && r.zaposleni_id === radnikId && r.datum === datum));
         return [...ostali, { zaposleni_id: radnikId, datum, pocetak, kraj }];
       });
     });
   };
 
   const izracunajPlaniraneSateUNedelji = (radnikId) => {
-    if (!Array.isArray(raspored)) return 0;
+    if (!Array.isArray(raspored) || raspored.length === 0) return 0;
     return raspored
-      .filter(r => r.zaposleni_id === radnikId && trenutnaNedelja.some(n => n.formatirano === r.datum))
+      .filter(r => r && r.zaposleni_id === radnikId && trenutnaNedelja.some(n => n.formatirano === r.datum))
       .reduce((ukupno, smena) => {
-        if (!smena.pocetak || !smena.kraj || ['GO','BOL'].includes(smena.pocetak.toUpperCase())) return ukupno;
+        if (!smena || !smena.pocetak || !smena.kraj || ['GO','BOL'].includes(smena.pocetak.toUpperCase())) return ukupno;
         let p = parseInt(smena.pocetak.split(':')[0]);
         let k = parseInt(smena.kraj.split(':')[0]);
         if (k === 0) k = 24; 
@@ -213,17 +218,21 @@ function App() {
   };
 
   const izracunajUkupneSateFirme = () => {
-    if (!Array.isArray(zaposleni)) return 0;
-    return zaposleni.reduce((Zbir, radnik) => Zbir + izracunajPlaniraneSateUNedelji(radnik.id), 0);
+    if (!Array.isArray(zaposleni) || zaposleni.length === 0) return 0;
+    return zaposleni.reduce((Zbir, radnik) => Zbir + (radnik ? izracunajPlaniraneSateUNedelji(radnik.id) : 0), 0);
   };
 
   const generisiIzvestaj = (id, imePrezime, trazeniMesec, trazenaGodina) => {
     setAktivniRadnik({ id, ime: imePrezime });
     fetch(`${API_URL}/izvestaj/${id}?mesec=${trazeniMesec}&godina=${trazenaGodina}`)
-      .then(res => res.json())
+      .then(res => res.ok ? res.json() : null)
       .then(podaci => { 
-        setIzvestaj({ ...podaci, imeRadnika: imePrezime }); 
-        setPrikaziIzvestaj(true); 
+        if (podaci) {
+          setIzvestaj({ ...podaci, imeRadnika: imePrezime }); 
+          setPrikaziIzvestaj(true); 
+        } else {
+          alert("Server je vratio grešku pri obračunu plate.");
+        }
       })
       .catch(() => alert("Greška pri generisanju izveštaja."));
   };
@@ -283,10 +292,10 @@ function App() {
                 </div>
                 
                 {zaposleni.length === 0 ? (
-                  <p style={{textAlign: 'center', padding: '2rem'}}>Trenutno nema unetih radnika. Idite na tab "Postavke" da dodate prvog radnika.</p>
+                  <p style={{textAlign: 'center', padding: '2rem'}}>Trenutno nema unetih radnika ili server ne odgovara.</p>
                 ) : (
                   <div className="cards-grid">
-                    {zaposleni.map((radnik) => (
+                    {zaposleni.map((radnik) => radnik && (
                       <div key={radnik.id} className="worker-card">
                         <h2>{radnik.ime} {radnik.prezime}</h2>
                         <div className="worker-role">{radnik.pozicija}</div>
@@ -325,7 +334,7 @@ function App() {
                   </div>
                   
                   {zaposleni.length === 0 ? (
-                    <p style={{textAlign: 'center', padding: '3rem'}}>Tabela je prazna jer nema unetih zaposlenih radnika u sistemu.</p>
+                    <p style={{textAlign: 'center', padding: '3rem'}}>Tabela je prazna jer nema unetih radnika ili server vraća grešku.</p>
                   ) : (
                     <div className="scrollable-table">
                       <table>
@@ -339,47 +348,45 @@ function App() {
                           </tr>
                         </thead>
                         <tbody>
-                          {zaposleni.map(radnik => {
-                            return (
-                              <tr key={`planer-${radnik.id}`}>
-                                <td className="text-left font-light">{radnik.ime} {radnik.prezime}</td>
+                          {zaposleni.map(radnik => radnik && (
+                            <tr key={`planer-${radnik.id}`}>
+                              <td className="text-left font-light">{radnik.ime} {radnik.prezime}</td>
+                              
+                              {trenutnaNedelja.map(dan => {
+                                const smena = (raspored || []).find(r => r && r.zaposleni_id === radnik.id && r.datum === dan.formatirano) || { pocetak: '', kraj: '' };
+                                const valPocetak = (smena.pocetak || '').toUpperCase();
+                                const imaOdsustvo = proveriPreklapanjeOdsustva(radnik.id, dan.formatirano);
                                 
-                                {trenutnaNedelja.map(dan => {
-                                  const smena = (raspored || []).find(r => r.zaposleni_id === radnik.id && r.datum === dan.formatirano) || { pocetak: '', kraj: '' };
-                                  const valPocetak = (smena.pocetak || '').toUpperCase();
-                                  const imaOdsustvo = proveriPreklapanjeOdsustva(radnik.id, dan.formatirano);
-                                  
-                                  let klasaBoje = 'text-white';
-                                  if (valPocetak === 'GO' || imaOdsustvo === 'GO') klasaBoje = 'text-yellow';
-                                  if (valPocetak === 'BOL' || imaOdsustvo === 'BOLOVANJE') klasaBoje = 'text-red';
-                                  
-                                  return (
-                                    <td key={dan.formatirano}>
-                                      <div className="table-inputs-group">
-                                        <input 
-                                          type="text" 
-                                          value={smena.pocetak || ''} 
-                                          disabled={tipKorisnika !== 'admin'} 
-                                          onChange={(e) => sacuvajSmenu(radnik.id, dan.formatirano, e.target.value, smena.kraj)} 
-                                          placeholder={imaOdsustvo ? imaOdsustvo : "08:00"} 
-                                          className={`${klasaBoje}`} 
-                                        />
-                                        <input 
-                                          type="text" 
-                                          value={smena.kraj || ''} 
-                                          disabled={tipKorisnika !== 'admin'} 
-                                          onChange={(e) => sacuvajSmenu(radnik.id, dan.formatirano, smena.pocetak, e.target.value)} 
-                                          placeholder={imaOdsustvo ? "SLOB" : "16:00"} 
-                                          className={`${klasaBoje}`} 
-                                        />
-                                      </div>
-                                    </td>
-                                  );
-                                })}
-                                <td className="font-bold">{izracunajPlaniraneSateUNedelji(radnik.id)} h</td>
-                              </tr>
-                            );
-                          })}
+                                let klasaBoje = 'text-white';
+                                if (valPocetak === 'GO' || imaOdsustvo === 'GO') klasaBoje = 'text-yellow';
+                                if (valPocetak === 'BOL' || imaOdsustvo === 'BOLOVANJE') klasaBoje = 'text-red';
+                                
+                                return (
+                                  <td key={dan.formatirano}>
+                                    <div className="table-inputs-group">
+                                      <input 
+                                        type="text" 
+                                        value={smena.pocetak || ''} 
+                                        disabled={tipKorisnika !== 'admin'} 
+                                        onChange={(e) => sacuvajSmenu(radnik.id, dan.formatirano, e.target.value, smena.kraj)} 
+                                        placeholder={imaOdsustvo ? imaOdsustvo : "08:00"} 
+                                        className={`${klasaBoje}`} 
+                                      />
+                                      <input 
+                                        type="text" 
+                                        value={smena.kraj || ''} 
+                                        disabled={tipKorisnika !== 'admin'} 
+                                        onChange={(e) => sacuvajSmenu(radnik.id, dan.formatirano, smena.pocetak, e.target.value)} 
+                                        placeholder={imaOdsustvo ? "SLOB" : "16:00"} 
+                                        className={`${klasaBoje}`} 
+                                      />
+                                    </div>
+                                  </td>
+                                );
+                              })}
+                              <td className="font-bold">{izracunajPlaniraneSateUNedelji(radnik.id)} h</td>
+                            </tr>
+                          ))}
                           
                           <tr className="table-summary-row">
                             <td className="text-left font-bold text-sky">Ukupno firma:</td>
