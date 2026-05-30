@@ -14,7 +14,6 @@ const POCETNO_STANJE_FORME = {
   praznik_bonus: '110', go_procenat: '100', bolovanje_procenat: '65'
 };
 
-// === ZAŠTITNI ZID (ERROR BOUNDARY) ZA SPREČAVANJE KOČENJA CELE APLIKACIJE ===
 class TabErrorBoundary extends Component {
   constructor(props) {
     super(props);
@@ -46,7 +45,6 @@ function App() {
   const [unosLozinke, setUnosLozinke] = useState('');
   const [greskaLozinka, setGreskaLozinka] = useState(false);
   
-  // POSTAVLJENO DA POČETNA STRANA BUDE GLAVNI ULAZNI TAB
   const [aktivniTab, setAktivniTab] = useState('pocetna');
 
   const [zaposleni, setZaposleni] = useState([]);
@@ -67,7 +65,15 @@ function App() {
   const [godisnjiIzvestaj, setGodisnjiIzvestaj] = useState(null);
   const [prikaziGodisnji, setPrikaziGodisnji] = useState(false);
 
-  // POMOĆNE STATISTIKE ZA NOVU POČETNU STRANU
+  // STANJA ZA NOVI MODAL NAPREDNIH ODSUSTAVA
+  const [prikaziModalOdsustva, setPrikaziModalOdsustva] = useState(false);
+  const [selektovaniRadnikOdsustvo, setSelektovaniRadnikOdsustvo] = useState(null);
+  const [odsustvoForm, setOdsustvoForm] = useState({
+    tip: 'GO',
+    datumOd: trenutniDatum.toISOString().split('T')[0],
+    datumDo: trenutniDatum.toISOString().split('T')[0]
+  });
+
   const [statsFirme, setStatsFirme] = useState({ ukupnoSati: 0, ukupnoZarada: 0 });
 
   const uzmiDatumeTekuceNedelje = () => {
@@ -87,7 +93,6 @@ function App() {
 
   const [trenutnaNedelja] = useState(uzmiDatumeTekuceNedelje());
 
-  // FUNKCIJA ZA OBRAČUN SMENE UNUTAR FRONTEND-A ZA POTREBE DASHBOARD-A
   const lokalniObracunStats = (sveSmene, sviRadnici) => {
     let ukupniSati = 0;
     let ukupnaZarada = 0;
@@ -104,7 +109,7 @@ function App() {
         const pVal = (smena.pocetak || '').toUpperCase().trim();
         if (pVal === 'GO' || pVal === 'BOL' || pVal === 'BOLOVANJE') {
           ukupniSati += 8;
-          ukupnaZarada += 8 * parseFloat(radnik.satnica || 0);
+          ukupnaZarada += 8 * parseFloat(radnik.satnica || 0) * (pVal === 'BOL' ? (parseFloat(radnik.bolovanje_procenat || 65)/100) : (parseFloat(radnik.go_procenat || 100)/100));
           return;
         }
         if (!smena.pocetak || !smena.kraj) return;
@@ -169,6 +174,46 @@ function App() {
     });
   };
 
+  // FUNKCIJA KOJA AUTOMATSKI POPUNJAVA SVAKI DAN IZMEĐU "OD" I "DO" DATUMA
+  const procesuirajGrupnoOdsustvo = async (e) => {
+    e.preventDefault();
+    if (!selektovaniRadnikOdsustvo) return;
+
+    let start = new Date(odsustvoForm.datumOd);
+    let end = new Date(odsustvoForm.datumDo);
+
+    if (start > end) {
+      alert("Datum 'Od' ne može biti nakon datuma 'Do'!");
+      return;
+    }
+
+    setUcitavam(true);
+    let tekuciDan = new Date(start);
+
+    // Prolazimo kroz svaki dan u izabranom opsegu
+    while (tekuciDan <= end) {
+      const formatiranDatum = tekuciDan.toISOString().split('T')[0];
+      
+      // Šaljemo podatak na backend u tabelu rasporeda (kraj ostavljamo prazan jer je u pitanju celodnevno odsustvo)
+      await fetch(`${API_URL}/raspored`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          zaposleni_id: selektovaniRadnikOdsustvo.id,
+          datum: formatiranDatum,
+          pocetak: odsustvoForm.tip, 
+          kraj: ''
+        })
+      });
+
+      tekuciDan.setDate(tekuciDan.getDate() + 1);
+    }
+
+    setPrikaziModalOdsustva(false);
+    await ucitajPodatke();
+    alert(`Uspešno upisano odsustvo (${odsustvoForm.tip}) za radnika ${selektovaniRadnikOdsustvo.ime}!`);
+  };
+
   const izracunajPlaniraneSateUNedelji = (radnikId) => {
     return raspored.filter(r => r.zaposleni_id === radnikId && trenutnaNedelja.some(n => n.formatirano === r.datum)).reduce((ukupno, smena) => {
       if (!smena.pocetak || ['GO','BOL'].includes(smena.pocetak.toUpperCase())) return ukupno;
@@ -205,7 +250,6 @@ function App() {
       });
   };
 
-  // DOBIJANJE DANASNJEG DATUMA U FORMATU YYYY-MM-DD ZA POČETNU STRANU
   const dobijDanasnjiString = () => {
     return trenutniDatum.toISOString().split('T')[0];
   };
@@ -240,7 +284,6 @@ function App() {
       </header>
 
       <nav className="navbar">
-        {/* DODATO NAVIGACIONO DUGME ZA POČETNU */}
         <button className={`nav-link ${aktivniTab === 'pocetna' ? 'active' : ''}`} onClick={() => setAktivniTab('pocetna')}>🏠 Početna</button>
         <button className={`nav-link ${aktivniTab === 'radnici' ? 'active' : ''}`} onClick={() => setAktivniTab('radnici')}>👥 Zaposleni i Izvještaji</button>
         <button className={`nav-link ${aktivniTab === 'planer' ? 'active' : ''}`} onClick={() => setAktivniTab('planer')}>📅 Planer Smena</button>
@@ -265,7 +308,7 @@ function App() {
         <main className="tab-content">
           {ucitavam ? <p className="loading">Učitavanje podataka...</p> : (
             <>
-              {/* === POTPUNO NOVA POČETNA STRANA (DASHBOARD) === */}
+              {/* === POČETNA STRANA (DASHBOARD) === */}
               {aktivniTab === 'pocetna' && (
                 <div className="fade-in" style={{maxWidth:'1100px', margin:'0 auto', color:'white', textAlign:'left'}}>
                   <div style={{background:'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', padding:'2rem', borderRadius:'12px', marginBottom:'2rem', border:'1px solid #334155'}}>
@@ -273,7 +316,6 @@ function App() {
                     <p style={{color:'#94a3b8', margin:0}}>Pregled rada i statistike za tekući period: <strong>{MESECI_NAZIVI[trenutniDatum.getMonth()]} {trenutniDatum.getFullYear()}.</strong></p>
                   </div>
 
-                  {/* KARTICE STATISTIKE */}
                   <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(280px, 1fr))', gap:'1.5rem', marginBottom:'2rem'}}>
                     <div style={{background:'#1e293b', padding:'1.5rem', borderRadius:'8px', borderLeft:'5px solid #38bdf8', border:'1px solid #334155'}}>
                       <div style={{fontSize:'0.85rem', color:'#94a3b8', fontWeight:'bold', textTransform:'uppercase'}}>Fond sati firme (Ovaj mesec)</div>
@@ -291,7 +333,7 @@ function App() {
 
                   {/* DANASNJI RASPORED */}
                   <div style={{background:'#1e293b', padding:'2rem', borderRadius:'8px', border:'1px solid #334155', marginBottom:'2rem'}}>
-                    <h3 style={{marginTop:0, color:'white', borderBottom:'1px solid #334155', paddingBottom:'0.5rem', display:'flex', justifyContent:'space-between'}}>
+                    <h3 style={{marginTop:0, color:'white', borderBottom:'1px solid #334155', paddingBottom:'0.5rem'}}>
                       <span>📅 Ko radi danas? ({trenutniDatum.getDate()}. {MESECI_NAZIVI[trenutniDatum.getMonth()]})</span>
                     </h3>
                     
@@ -309,8 +351,8 @@ function App() {
                                   <strong style={{color:'white', display:'block'}}>{radnik.ime} {radnik.prezime}</strong>
                                   <span style={{fontSize:'0.8rem', color:'#94a3b8'}}>{radnik.pozicija}</span>
                                 </div>
-                                <span style={{background:'#0284c7', color:'white', padding:'0.3rem 0.6rem', borderRadius:'4px', fontSize:'0.85rem', fontWeight:'bold'}}>
-                                  {danasnjaSmena.pocetak} - {danasnjaSmena.kraj}
+                                <span style={{background: ['GO','BOL'].includes(danasnjaSmena.pocetak.toUpperCase()) ? '#b45309' : '#0284c7', color:'white', padding:'0.3rem 0.6rem', borderRadius:'4px', fontSize:'0.85rem', fontWeight:'bold'}}>
+                                  {danasnjaSmena.pocetak} {danasnjaSmena.kraj ? `- ${danasnjaSmena.kraj}` : ''}
                                 </span>
                               </div>
                             );
@@ -320,7 +362,6 @@ function App() {
                     </div>
                   </div>
 
-                  {/* BRZE AKCIJE */}
                   <div style={{display:'flex', gap:'1rem', flexWrap:'wrap'}}>
                     <button onClick={() => setAktivniTab('planer')} style={{background:'#0284c7', color:'white', padding:'0.8rem 1.5rem', border:'none', borderRadius:'6px', cursor:'pointer', fontWeight:'bold'}}>📅 Otvori Planer Smena</button>
                     <button onClick={() => setAktivniTab('radnici')} style={{background:'#475569', color:'white', padding:'0.8rem 1.5rem', border:'none', borderRadius:'6px', cursor:'pointer', fontWeight:'bold'}}>📊 Pogledaj Obračne i Izvještaje</button>
@@ -344,6 +385,13 @@ function App() {
                           <button onClick={() => ucitajGodisnjiIzvestaj(radnik)} className="btn-action dark" style={{background:'#475569', color: 'white', border: 'none', padding: '0.6rem', borderRadius: '4px', cursor: 'pointer'}}>
                             📅 Godišnji Izveštaj ({izabranaGodina})
                           </button>
+                          
+                          {/* NOVO DUGME ZA PLANIRANJE ODSUSTVA */}
+                          {tipKorisnika === 'admin' && (
+                            <button onClick={() => { setSelektovaniRadnikOdsustvo(radnik); setPrikaziModalOdsustva(true); }} style={{background:'#b45309', color: 'white', border: 'none', padding: '0.6rem', borderRadius: '4px', cursor: 'pointer', fontWeight:'bold', marginTop:'4px'}}>
+                              🌴 Evidentiraj Odsustvo (GO / BOL)
+                            </button>
+                          )}
                         </div>
 
                         {tipKorisnika === 'admin' && (
@@ -469,76 +517,6 @@ function App() {
         </main>
       </TabErrorBoundary>
 
-      {/* === MODAL ZA MESEČNI IZVEŠTAJ === */}
-      {prikaziIzvestaj && izvestaj && (
+      {/* === POTPUNO NOVI MODAL ZA EVIDENTIRANJE ODSUSTVA (BRZO I GRUPNO) === */}
+      {prikaziModalOdsustva && selektovaniRadnikOdsustvo && (
         <div style={{position:'fixed', top:0, left:0, width:'100%', height:'100%', backgroundColor:'rgba(0,0,0,0.8)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:99999}}>
-          <div style={{maxWidth:'500px', width:'90%', background:'#111827', padding:'2rem', borderRadius:'12px', color:'white', textAlign:'left'}}>
-            <h2 style={{marginTop:0, color:'white'}}>Mesečni Obračun Zarade</h2>
-            <div style={{color:'#38bdf8', fontSize:'1.4rem', fontWeight:'bold'}}>{izvestaj.imeRadnika}</div>
-            <div style={{color:'#94a3b8', fontSize:'0.95rem', marginBottom:'1.5rem'}}>Period: {izvestaj.mesecText} / {izvestaj.godinaText}.</div>
-            
-            <div style={{background:'#1f2937', padding:'1.2rem', borderRadius:'8px', display:'flex', flexDirection:'column', gap:'0.6rem'}}>
-              <div style={{display:'flex', justifyContent:'space-between'}}><span>Osnovna satnica:</span> <strong style={{color:'white'}}>{izvestaj.satnica} RSD</strong></div>
-              <div style={{display:'flex', justifyContent:'space-between'}}><span>Ukupno sati rada:</span> <strong style={{color:'white'}}>{izvestaj.ukupnoSati} h</strong></div>
-              <div style={{display:'flex', justifyContent:'space-between'}}><span>Noćni sati (+{izvestaj.nocniBonus}%):</span> <strong style={{color:'#f43f5e'}}>{izvestaj.nocniSati} h</strong></div>
-              <div style={{display:'flex', justifyContent:'space-between'}}><span>Godišnji odmor:</span> <strong style={{color:'#fbbf24'}}>{izvestaj.satiGO} h ({izvestaj.zaradaGO} RSD)</strong></div>
-              <div style={{display:'flex', justifyContent:'space-between'}}><span>Bolovanje:</span> <strong style={{color:'#f87171'}}>{izvestaj.satiBolovanje} h ({izvestaj.zaradaBolovanje} RSD)</strong></div>
-            </div>
-
-            <div style={{background:'#0284c7', padding:'1.2rem', borderRadius:'8px', textAlign:'center', marginTop:'1.5rem'}}>
-              <div style={{fontSize:'0.85rem', letterSpacing:'1px'}}>UKUPNO ZA ISPLATU</div>
-              <div style={{fontSize:'2.2rem', fontWeight:'bold', marginTop:'0.2rem'}}>{izvestaj.plata || izvestaj.zaradaOdRada} RSD</div>
-            </div>
-            <button onClick={()=>setPrikaziIzvestaj(false)} style={{marginTop:'1.5rem', width:'100%', background:'#374151', color:'white', border:'none', padding:'0.75rem', borderRadius:'6px', cursor:'pointer', fontWeight:'bold'}}>Zatvori</button>
-          </div>
-        </div>
-      )}
-
-      {/* === MODAL ZA GODIŠNJI PREGLED === */}
-      {prikaziGodisnji && godisnjiIzvestaj && (
-        <div style={{position:'fixed', top:0, left:0, width:'100%', height:'100%', backgroundColor:'rgba(0,0,0,0.85)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:99999}}>
-          <div style={{maxWidth:'600px', width:'95%', background:'#1f2937', padding:'2rem', borderRadius:'12px', color:'white', boxShadow:'0 20px 25px -5px rgba(0,0,0,0.5)', border:'1px solid #374151'}}>
-            <h2 style={{marginTop:0, color:'white', fontSize:'1.6rem', borderBottom:'1px solid #374151', paddingBottom:'0.5rem'}}>Godišnji Izveštaj Zarade ({godisnjiIzvestaj.godina})</h2>
-            <div style={{color:'#38bdf8', fontSize:'1.4rem', fontWeight:'bold', margin:'0.5rem 0 1.5rem 0'}}>{godisnjiIzvestaj.imeRadnika}</div>
-            
-            <div style={{maxHeight:'280px', overflowY:'auto', background:'#111827', borderRadius:'8px', padding:'0.5rem', marginBottom:'1.5rem'}}>
-              <table style={{width:'100%', borderCollapse:'collapse'}}>
-                <thead>
-                  <tr style={{borderBottom:'2px solid #374151', color:'#94a3b8', fontSize:'0.85rem', textTransform:'uppercase'}}>
-                    <th style={{textAlign:'left', padding:'0.75rem'}}>Mesec</th>
-                    <th style={{textAlign:'center', padding:'0.75rem'}}>Ukupno Sati</th>
-                    <th style={{textAlign:'right', padding:'0.75rem'}}>Ukupna Isplata</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {godisnjiIzvestaj.poMesecima && godisnjiIzvestaj.poMesecima.map((m, i) => (
-                    <tr key={i} style={{borderBottom:'1px solid #1f2937', fontSize:'1rem'}}>
-                      <td style={{padding:'0.75rem', textAlign:'left', color:'#ffffff', fontWeight:'500'}}>{MESECI_NAZIVI[m.mesec-1]}</td>
-                      <td style={{padding:'0.75rem', textAlign:'center', color:'#cbd5e1'}}>{m.sati || 0} h</td>
-                      <td style={{padding:'0.75rem', textAlign:'right', fontWeight:'bold', color:'#34d399'}}>{m.zarada || 0} RSD</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'1rem', background:'#111827', padding:'1rem', borderRadius:'8px', textAlign:'center', border:'1px solid #374151'}}>
-              <div>
-                <div style={{fontSize:'0.75rem', color:'#94a3b8', fontWeight:'bold', textTransform:'uppercase'}}>Sati u godini</div>
-                <div style={{fontSize:'1.6rem', fontWeight:'bold', color:'#38bdf8', marginTop:'0.2rem'}}>{godisnjiIzvestaj.ukupnoSatiGodina || 0} h</div>
-              </div>
-              <div>
-                <div style={{fontSize:'0.75rem', color:'#94a3b8', fontWeight:'bold', textTransform:'uppercase'}}>Isplaćeno u godini</div>
-                <div style={{fontSize:'1.6rem', fontWeight:'bold', color:'#10b981', marginTop:'0.2rem'}}>{godisnjiIzvestaj.ukupnoZaradaGodina || 0} RSD</div>
-              </div>
-            </div>
-
-            <button onClick={()=>setPrikaziGodisnji(false)} style={{marginTop:'1.5rem', width:'100%', background:'#ef4444', color:'white', border:'none', padding:'0.8rem', borderRadius:'6px', cursor:'pointer', fontWeight:'bold', fontSize:'1rem'}}>Zatvori Izveštaj</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-export default App;
