@@ -1,13 +1,12 @@
 import { useState, useEffect } from 'react';
 import './App.css';
 
-// AUTOMATSKO PREPOZNAVANJE RAČUNARA: Uzima adresu računara na kom se nalazi i gađa port 3000
+// AUTOMATSKO PREPOZNAVANJE RAČUNARA
 const API_URL = `http://${window.location.hostname}:3000`;
 const DANI_NAZIVI = ['Pon', 'Uto', 'Sre', 'Čet', 'Pet', 'Sub', 'Ned'];
 
-// DVE LOZINKE ZA PRISTUP
-const LOZINKA_ADMIN = 'menadzer2026'; // Puni pristup
-const LOZINKA_PREGLED = 'gledaj2026';  // Samo za gledanje (telefon / gosti)
+const LOZINKA_ADMIN = 'menadzer2026'; 
+const LOZINKA_PREGLED = 'gledaj2026';  
 
 const POCETNO_STANJE_FORME = {
   ime: '', prezime: '', pozicija: '', satnica: '',
@@ -16,13 +15,10 @@ const POCETNO_STANJE_FORME = {
 };
 
 function App() {
-  // --- LOGIN STATE ---
   const [isUlogovan, setIsUlogovan] = useState(false);
-  const [tipKorisnika, setTipKorisnika] = useState('gost'); // 'admin' ili 'gost'
+  const [tipKorisnika, setTipKorisnika] = useState('gost'); 
   const [unosLozinke, setUnosLozinke] = useState('');
   const [greskaLozinka, setGreskaLozinka] = useState(false);
-
-  // --- STATE ZA NAVIGACIJU ---
   const [aktivniTab, setAktivniTab] = useState('radnici');
 
   const [zaposleni, setZaposleni] = useState([]);
@@ -62,21 +58,26 @@ function App() {
     return datumi;
   };
 
-  // POPRAVLJENO: Ovde je bila greška u nazivu funkcije zbog koje je nestao planer!
   const [trenutnaNedelja] = useState(uzmiDatumeTekuceNedelje());
 
   const ucitajPodatke = async () => {
     try {
+      console.log("Pokrećem učitavanje sa adrese:", API_URL);
       const [resZaposleni, resRaspored, resOdsustva] = await Promise.all([
-        fetch(`${API_URL}/zaposleni`),
-        fetch(`${API_URL}/raspored`),
-        fetch(`${API_URL}/odsustva`)
+        fetch(`${API_URL}/zaposleni`).catch(e => { console.error("Greška zaposleni:", e); return { json: () => [] }; }),
+        fetch(`${API_URL}/raspored`).catch(e => { console.error("Greška raspored:", e); return { json: () => [] }; }),
+        fetch(`${API_URL}/odsustva`).catch(e => { console.error("Greška odsustva:", e); return { json: () => [] }; })
       ]);
-      setZaposleni(await resZaposleni.json());
-      setRaspored(await resRaspored.json());
-      setOdsustva(await resOdsustva.json());
+      
+      const podaciRadnici = Array.isArray(resZaposleni) ? resZaposleni : await resZaposleni.json();
+      const podaciRaspored = Array.isArray(resRaspored) ? resRaspored : await resRaspored.json();
+      const podaciOdsustva = Array.isArray(resOdsustva) ? resOdsustva : await resOdsustva.json();
+
+      setZaposleni(Array.isArray(podaciRadnici) ? podaciRadnici : []);
+      setRaspored(Array.isArray(podaciRaspored) ? podaciRaspored : []);
+      setOdsustva(Array.isArray(podaciOdsustva) ? podaciOdsustva : []);
     } catch (err) {
-      console.error("Greška pri učitavanju:", err);
+      console.error("Glavna greška pri učitavanju:", err);
     } finally {
       setUcitavam(false);
     }
@@ -110,7 +111,7 @@ function App() {
 
   const sacuvajRadnika = (e) => {
     e.preventDefault();
-    if (tipKorisnika !== 'admin') return alert('Nemate dozvolu za menjanje!');
+    if (tipKorisnika !== 'admin') return alert('Nemate dozvolu!');
     const url = idZaIzmenu ? `${API_URL}/zaposleni/${idZaIzmenu}` : `${API_URL}/zaposleni`;
     fetch(url, { 
       method: idZaIzmenu ? 'PUT' : 'POST', 
@@ -120,7 +121,7 @@ function App() {
       setForm(POCETNO_STANJE_FORME); 
       setIdZaIzmenu(null); 
       ucitajPodatke(); 
-      alert('Podaci o radniku uspešno sačuvani!');
+      alert('Podaci uspešno sačuvani!');
     });
   };
 
@@ -139,7 +140,7 @@ function App() {
 
   const obrisiRadnika = (id) => {
     if (tipKorisnika !== 'admin') return;
-    if (window.confirm("Da li sigurno želite da obrišete radnika?")) {
+    if (window.confirm("Obbrisati radnika?")) {
       fetch(`${API_URL}/zaposleni/${id}`, { method: 'DELETE' }).then(() => ucitajPodatke());
     }
   };
@@ -157,7 +158,7 @@ function App() {
         tip: novoOdsustvo.tip 
       })
     }).then(() => {
-      alert('Odsustvo uspešno upisano!');
+      alert('Odsustvo upisano!');
       ucitajPodatke();
       setPrikaziKalendar(false);
       setNovoOdsustvo({ od: '', do: '', tip: 'GO' });
@@ -165,6 +166,7 @@ function App() {
   };
 
   const proveriPreklapanjeOdsustva = (radnikId, datumString) => {
+    if (!Array.isArray(odsustva)) return null;
     const targetDatum = new Date(datumString);
     targetDatum.setHours(0, 0, 0, 0);
 
@@ -182,7 +184,7 @@ function App() {
     if (tipKorisnika !== 'admin') return; 
     const tipOdsustva = proveriPreklapanjeOdsustva(radnikId, datum);
     if (tipOdsustva && pocetak !== '' && pocetak.toUpperCase() !== 'GO' && pocetak.toUpperCase() !== 'BOL') {
-      if (!window.confirm(`Radnik ima odobren ${tipOdsustva} za taj dan. Upisati smenu uprkos tome?`)) return;
+      if (!window.confirm(`Radnik ima odobren ${tipOdsustva}. Upisati smenu?`)) return;
     }
 
     fetch(`${API_URL}/raspored`, {
@@ -198,6 +200,7 @@ function App() {
   };
 
   const izracunajPlaniraneSateUNedelji = (radnikId) => {
+    if (!Array.isArray(raspored)) return 0;
     return raspored
       .filter(r => r.zaposleni_id === radnikId && trenutnaNedelja.some(n => n.formatirano === r.datum))
       .reduce((ukupno, smena) => {
@@ -210,6 +213,7 @@ function App() {
   };
 
   const izracunajUkupneSateFirme = () => {
+    if (!Array.isArray(zaposleni)) return 0;
     return zaposleni.reduce((Zbir, radnik) => Zbir + izracunajPlaniraneSateUNedelji(radnik.id), 0);
   };
 
@@ -238,7 +242,7 @@ function App() {
               onChange={(e) => setUnosLozinke(e.target.value)} 
               required
             />
-            {greskaLozinka && <p className="login-error">❌ Pogrešna lozinka. Pokušajte ponovo.</p>}
+            {greskaLozinka && <p className="login-error">❌ Pogrešna lozinka.</p>}
             <button type="submit" className="btn-primary w-100" style={{marginTop: '1rem'}}>Pristupi aplikaciji</button>
           </form>
         </div>
@@ -276,34 +280,37 @@ function App() {
               <div className="fade-in">
                 <div className="section-header-box">
                   <h2>Spisak Zaposlenih</h2>
-                  <p>Pregled radnika, evidencija odsustva i obračun plata</p>
                 </div>
                 
-                <div className="cards-grid">
-                  {zaposleni.map((radnik) => (
-                    <div key={radnik.id} className="worker-card">
-                      <h2>{radnik.ime} {radnik.prezime}</h2>
-                      <div className="worker-role">{radnik.pozicija}</div>
-                      
-                      {tipKorisnika === 'admin' && (
-                        <button onClick={() => { setKalendarRadnikId(radnik.id); setPrikaziKalendar(true); }} className="btn-action info">
-                          📅 Evidencija Odsustva (GO/BOL)
+                {zaposleni.length === 0 ? (
+                  <p style={{textAlign: 'center', padding: '2rem'}}>Trenutno nema unetih radnika. Idite na tab "Postavke" da dodate prvog radnika.</p>
+                ) : (
+                  <div className="cards-grid">
+                    {zaposleni.map((radnik) => (
+                      <div key={radnik.id} className="worker-card">
+                        <h2>{radnik.ime} {radnik.prezime}</h2>
+                        <div className="worker-role">{radnik.pozicija}</div>
+                        
+                        {tipKorisnika === 'admin' && (
+                          <button onClick={() => { setKalendarRadnikId(radnik.id); setPrikaziKalendar(true); }} className="btn-action info">
+                            📅 Evidencija Odsustva (GO/BOL)
+                          </button>
+                        )}
+                        
+                        <button onClick={() => generisiIzvestaj(radnik.id, `${radnik.ime} ${radnik.prezime}`, izabraniMesec, izabranaGodina)} className="btn-action dark">
+                          📊 Obračunaj platu
                         </button>
-                      )}
-                      
-                      <button onClick={() => generisiIzvestaj(radnik.id, `${radnik.ime} ${radnik.prezime}`, izabraniMesec, izabranaGodina)} className="btn-action dark">
-                        📊 Obračunaj platu
-                      </button>
 
-                      {tipKorisnika === 'admin' && (
-                        <div className="card-footer-buttons">
-                          <button onClick={() => pripremiZaIzmenu(radnik)} className="btn-outline info">Izmeni</button>
-                          <button onClick={() => obrisiRadnika(radnik.id)} className="btn-outline danger">Obriši</button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                        {tipKorisnika === 'admin' && (
+                          <div className="card-footer-buttons">
+                            <button onClick={() => pripremiZaIzmenu(radnik)} className="btn-outline info">Izmeni</button>
+                            <button onClick={() => obrisiRadnika(radnik.id)} className="btn-outline danger">Obriši</button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -314,73 +321,75 @@ function App() {
                   <div className="table-header-row">
                     <div>
                       <h2>Nedeljni planer smena</h2>
-                      <p style={{margin:0, fontSize:'0.9rem', color:'var(--text-muted)'}}>
-                        {tipKorisnika === 'admin' ? "Upišite vreme rada (npr. 08:00 i 16:00) ili oznake 'GO' / 'BOL'" : "Pregled planiranih smena za tekuću nedelju"}
-                      </p>
                     </div>
                   </div>
-                  <div className="scrollable-table">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th className="text-left">Zaposleni</th>
-                          {trenutnaNedelja.map(dan => (
-                            <th key={dan.formatirano}>{dan.naziv} <br/><small style={{color:'#94a3b8'}}>{dan.formatirano.split('-')[2]}.{dan.formatirano.split('-')[1]}</small></th>
-                          ))}
-                          <th>Sati ove nedelje</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {zaposleni.map(radnik => {
-                          return (
-                            <tr key={`planer-${radnik.id}`}>
-                              <td className="text-left font-light">{radnik.ime} {radnik.prezime}</td>
-                              
-                              {trenutnaNedelja.map(dan => {
-                                const smena = raspored.find(r => r.zaposleni_id === radnik.id && r.datum === dan.formatirano) || { pocetak: '', kraj: '' };
-                                const valPocetak = (smena.pocetak || '').toUpperCase();
-                                const imaOdsustvo = proveriPreklapanjeOdsustva(radnik.id, dan.formatirano);
+                  
+                  {zaposleni.length === 0 ? (
+                    <p style={{textAlign: 'center', padding: '3rem'}}>Tabela je prazna jer nema unetih zaposlenih radnika u sistemu.</p>
+                  ) : (
+                    <div className="scrollable-table">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th className="text-left">Zaposleni</th>
+                            {trenutnaNedelja.map(dan => (
+                              <th key={dan.formatirano}>{dan.naziv} <br/><small style={{color:'#94a3b8'}}>{dan.formatirano.split('-')[2]}.{dan.formatirano.split('-')[1]}</small></th>
+                            ))}
+                            <th>Sati</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {zaposleni.map(radnik => {
+                            return (
+                              <tr key={`planer-${radnik.id}`}>
+                                <td className="text-left font-light">{radnik.ime} {radnik.prezime}</td>
                                 
-                                let klasaBoje = 'text-white';
-                                if (valPocetak === 'GO' || imaOdsustvo === 'GO') klasaBoje = 'text-yellow';
-                                if (valPocetak === 'BOL' || imaOdsustvo === 'BOLOVANJE') klasaBoje = 'text-red';
-                                
-                                return (
-                                  <td key={dan.formatirano}>
-                                    <div className="table-inputs-group">
-                                      <input 
-                                        type="text" 
-                                        value={smena.pocetak || ''} 
-                                        disabled={tipKorisnika !== 'admin'} 
-                                        onChange={(e) => sacuvajSmenu(radnik.id, dan.formatirano, e.target.value, smena.kraj)} 
-                                        placeholder={imaOdsustvo ? imaOdsustvo : "08:00"} 
-                                        className={`${klasaBoje}`} 
-                                      />
-                                      <input 
-                                        type="text" 
-                                        value={smena.kraj || ''} 
-                                        disabled={tipKorisnika !== 'admin'} 
-                                        onChange={(e) => sacuvajSmenu(radnik.id, dan.formatirano, smena.pocetak, e.target.value)} 
-                                        placeholder={imaOdsustvo ? "SLOB" : "16:00"} 
-                                        className={`${klasaBoje}`} 
-                                      />
-                                    </div>
-                                  </td>
-                                );
-                              })}
-                              <td className="font-bold">{izracunajPlaniraneSateUNedelji(radnik.id)} h</td>
-                            </tr>
-                          );
-                        })}
-                        
-                        <tr className="table-summary-row">
-                          <td className="text-left font-bold text-sky">Ukupno firma (Ove nedelje):</td>
-                          {trenutnaNedelja.map(dan => <td key={`prazno-${dan.formatirano}`}></td>)}
-                          <td className="font-bold text-sky">{izracunajUkupneSateFirme()} h</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
+                                {trenutnaNedelja.map(dan => {
+                                  const smena = (raspored || []).find(r => r.zaposleni_id === radnik.id && r.datum === dan.formatirano) || { pocetak: '', kraj: '' };
+                                  const valPocetak = (smena.pocetak || '').toUpperCase();
+                                  const imaOdsustvo = proveriPreklapanjeOdsustva(radnik.id, dan.formatirano);
+                                  
+                                  let klasaBoje = 'text-white';
+                                  if (valPocetak === 'GO' || imaOdsustvo === 'GO') klasaBoje = 'text-yellow';
+                                  if (valPocetak === 'BOL' || imaOdsustvo === 'BOLOVANJE') klasaBoje = 'text-red';
+                                  
+                                  return (
+                                    <td key={dan.formatirano}>
+                                      <div className="table-inputs-group">
+                                        <input 
+                                          type="text" 
+                                          value={smena.pocetak || ''} 
+                                          disabled={tipKorisnika !== 'admin'} 
+                                          onChange={(e) => sacuvajSmenu(radnik.id, dan.formatirano, e.target.value, smena.kraj)} 
+                                          placeholder={imaOdsustvo ? imaOdsustvo : "08:00"} 
+                                          className={`${klasaBoje}`} 
+                                        />
+                                        <input 
+                                          type="text" 
+                                          value={smena.kraj || ''} 
+                                          disabled={tipKorisnika !== 'admin'} 
+                                          onChange={(e) => sacuvajSmenu(radnik.id, dan.formatirano, smena.pocetak, e.target.value)} 
+                                          placeholder={imaOdsustvo ? "SLOB" : "16:00"} 
+                                          className={`${klasaBoje}`} 
+                                        />
+                                      </div>
+                                    </td>
+                                  );
+                                })}
+                                <td className="font-bold">{izracunajPlaniraneSateUNedelji(radnik.id)} h</td>
+                              </tr>
+                            );
+                          })}
+                          
+                          <tr className="table-summary-row">
+                            <td className="text-left font-bold text-sky">Ukupno firma:</td>
+                            {trenutnaNedelja.map(dan => <td key={`prazno-${dan.formatirano}`}></td>)}
+                            <td className="font-bold text-sky">{izracunajUkupneSateFirme()} h</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -389,7 +398,7 @@ function App() {
             {aktivniTab === 'postavke' && tipKorisnika === 'admin' && (
               <div className="fade-in">
                 <form onSubmit={sacuvajRadnika} className="hr-form">
-                  <h3>{idZaIzmenu ? 'Izmena podataka radnika' : 'Dodaj novog zaposlenog u firmu'}</h3>
+                  <h3>{idZaIzmenu ? 'Izmena podataka radnika' : 'Dodaj novog zaposlenog'}</h3>
                   <div className="form-row">
                     <input name="ime" placeholder="Ime" value={form.ime} onChange={handleInputChange} required />
                     <input name="prezime" placeholder="Prezime" value={form.prezime} onChange={handleInputChange} required />
@@ -445,7 +454,7 @@ function App() {
         )}
       </main>
 
-      {/* --- MODAL ZA KALENDAR ODSUSTVA --- */}
+      {/* MODAL ZA ODSUSTVA */}
       {prikaziKalendar && tipKorisnika === 'admin' && (
         <div className="modal-overlay">
           <div className="modal-content">
@@ -475,7 +484,7 @@ function App() {
         </div>
       )}
 
-      {/* --- MODAL ZA IZVEŠTAJ ZARADE --- */}
+      {/* MODAL ZA IZVEŠTAJ */}
       {prikaziIzvestaj && izvestaj && (
         <div className="modal-overlay">
           <div className="modal-content scrollable-y">
