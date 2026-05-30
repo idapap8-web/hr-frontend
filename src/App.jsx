@@ -38,10 +38,6 @@ function App() {
 
   const [godisnjiIzvestaj, setGodisnjiIzvestaj] = useState(null);
   const [prikaziGodisnji, setPrikaziGodisnji] = useState(false);
-  
-  const [prikaziKalendar, setPrikaziKalendar] = useState(false);
-  const [kalendarRadnikId, setKalendarRadnikId] = useState(null);
-  const [novoOdsustvo, setNovoOdsustvo] = useState({ od: '', do: '', tip: 'GO' });
 
   const uzmiDatumeTekuceNedelje = () => {
     const danas = new Date();
@@ -89,7 +85,7 @@ function App() {
   const sacuvajRadnika = (e) => {
     e.preventDefault();
     const url = idZaIzmenu ? `${API_URL}/zaposleni/${idZaIzmenu}` : `${API_URL}/zaposleni`;
-    fetch(url, { method: idZaIzmenu ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) }).then(() => { setForm(POCETNO_STANJE_FORME); setIdZaIzmenu(null); ucitajPodatke(); alert('Sačuvano!'); });
+    fetch(url, { method: idZaIzmenu ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) }).then(() => { setForm(POCETNO_STANJE_FORME); setIdZaIzmenu(null); ucitajPodatke(); alert('Uspešno sačuvano!'); });
   };
 
   const pripremiZaIzmenu = (radnik) => {
@@ -118,7 +114,6 @@ function App() {
       .then(res => res.json())
       .then(podaci => {
         setIzvestaj({ ...podaci, imeRadnika: `${radnik.ime} ${radnik.prezime}`, mesecText: MESECI_NAZIVI[izabraniMesec-1], godinaText: izabranaGodina });
-        setIzvestaj(stari => ({...stari, isplata: stari.plata || stari.zaradaOdRada || 0}));
         setPrikaziIzvestaj(true);
       });
   };
@@ -130,7 +125,6 @@ function App() {
         if(podaci && podaci.poMesecima) {
           setGodisnjiIzvestaj({ ...podaci, imeRadnika: `${radnik.ime} ${radnik.prezime}` });
         } else {
-          // Rezervni raspored ako je lista prazna
           const lazniMeseci = Array(12).fill(0).map((_, i) => ({ mesec: i + 1, sati: 0, zarada: 0 }));
           setGodisnjiIzvestaj({ godina: izabranaGodina, imeRadnika: `${radnik.ime} ${radnik.prezime}`, ukupnoSatiGodina: 0, ukupnoZaradaGodina: 0, poMesecima: lazniMeseci });
         }
@@ -254,15 +248,71 @@ function App() {
               </div>
             )}
 
-            {/* === POSTAVKE === */}
+            {/* === PROŠIRENE POSTAVKE SA SVIM STALNIM FUNKCIJAMA === */}
             {aktivniTab === 'postavke' && (
               <div className="fade-in">
-                <form onSubmit={sacuvajRadnika} className="hr-form" style={{maxWidth:'600px', margin:'0 auto'}}>
-                  <input name="ime" placeholder="Ime" value={form.ime} onChange={handleInputChange} required />
-                  <input name="prezime" placeholder="Prezime" value={form.prezime} onChange={handleInputChange} required />
-                  <input name="pozicija" placeholder="Pozicija" value={form.pozicija} onChange={handleInputChange} required />
-                  <input type="number" name="satnica" placeholder="Satnica (RSD)" value={form.satnica} onChange={handleInputChange} required />
-                  <button type="submit" className="btn-primary" style={{marginTop:'1rem'}}>Sačuvaj Radnika</button>
+                <form onSubmit={sacuvajRadnika} className="hr-form" style={{maxWidth:'650px', margin:'0 auto', display:'flex', flexDirection:'column', gap:'0.8rem', background:'#1e293b', padding:'2rem', borderRadius:'8px', color:'white'}}>
+                  <h3 style={{marginTop:0, borderBottom:'1px solid #334155', paddingBottom:'0.5rem'}}>{idZaIzmenu ? '📝 Izmena podataka o zaposlenom' : '👤 Dodavanje novog zaposlenog'}</h3>
+                  
+                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'1rem'}}>
+                    <div>
+                      <label style={{fontSize:'0.85rem', color:'#94a3b8'}}>Ime:</label>
+                      <input name="ime" placeholder="Ime" value={form.ime} onChange={handleInputChange} required style={{width:'100%', padding:'0.6rem', marginTop:'0.2rem', background:'#0f172a', color:'white', border:'1px solid #334155', borderRadius:'4px'}} />
+                    </div>
+                    <div>
+                      <label style={{fontSize:'0.85rem', color:'#94a3b8'}}>Prezime:</label>
+                      <input name="prezime" placeholder="Prezime" value={form.prezime} onChange={handleInputChange} required style={{width:'100%', padding:'0.6rem', marginTop:'0.2rem', background:'#0f172a', color:'white', border:'1px solid #334155', borderRadius:'4px'}} />
+                    </div>
+                  </div>
+
+                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'1rem'}}>
+                    <div>
+                      <label style={{fontSize:'0.85rem', color:'#94a3b8'}}>Radna Pozicija:</label>
+                      <input name="pozicija" placeholder="Npr. Menadžer, Radnik..." value={form.pozicija} onChange={handleInputChange} required style={{width:'100%', padding:'0.6rem', marginTop:'0.2rem', background:'#0f172a', color:'white', border:'1px solid #334155', borderRadius:'4px'}} />
+                    </div>
+                    <div>
+                      <label style={{fontSize:'0.85rem', color:'#94a3b8'}}>Satnica (RSD):</label>
+                      <input type="number" name="satnica" placeholder="Cena po satu" value={form.satnica} onChange={handleInputChange} required style={{width:'100%', padding:'0.6rem', marginTop:'0.2rem', background:'#0f172a', color:'white', border:'1px solid #334155', borderRadius:'4px'}} />
+                    </div>
+                  </div>
+
+                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'1rem', marginTop:'0.5rem', paddingTop:'0.5rem', borderTop:'1px solid #334155'}}>
+                    <div>
+                      <label style={{fontSize:'0.85rem', color:'#94a3b8'}}>Noćni rad počinje od:</label>
+                      <input name="nocna_pocetak" value={form.nocna_pocetak} onChange={handleInputChange} style={{width:'100%', padding:'0.6rem', marginTop:'0.2rem', background:'#0f172a', color:'white', border:'1px solid #334155', borderRadius:'4px'}} />
+                    </div>
+                    <div>
+                      <label style={{fontSize:'0.85rem', color:'#94a3b8'}}>Noćni rad traje do:</label>
+                      <input name="nocna_kraj" value={form.nocna_kraj} onChange={handleInputChange} style={{width:'100%', padding:'0.6rem', marginTop:'0.2rem', background:'#0f172a', color:'white', border:'1px solid #334155', borderRadius:'4px'}} />
+                    </div>
+                  </div>
+
+                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'1rem'}}>
+                    <div>
+                      <label style={{fontSize:'0.85rem', color:'#94a3b8'}}>Noćni bonus (%):</label>
+                      <input type="number" name="nocni_bonus" value={form.nocni_bonus} onChange={handleInputChange} style={{width:'100%', padding:'0.6rem', marginTop:'0.2rem', background:'#0f172a', color:'white', border:'1px solid #334155', borderRadius:'4px'}} />
+                    </div>
+                    <div>
+                      <label style={{fontSize:'0.85rem', color:'#94a3b8'}}>Praznični bonus (%):</label>
+                      <input type="number" name="praznik_bonus" value={form.praznik_bonus} onChange={handleInputChange} style={{width:'100%', padding:'0.6rem', marginTop:'0.2rem', background:'#0f172a', color:'white', border:'1px solid #334155', borderRadius:'4px'}} />
+                    </div>
+                  </div>
+
+                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'1rem'}}>
+                    <div>
+                      <label style={{fontSize:'0.85rem', color:'#94a3b8'}}>Godišnji odmor (% isplate):</label>
+                      <input type="number" name="go_procenat" value={form.go_procenat} onChange={handleInputChange} style={{width:'100%', padding:'0.6rem', marginTop:'0.2rem', background:'#0f172a', color:'white', border:'1px solid #334155', borderRadius:'4px'}} />
+                    </div>
+                    <div>
+                      <label style={{fontSize:'0.85rem', color:'#94a3b8'}}>Bolovanje (% isplate):</label>
+                      <input type="number" name="bolovanje_procenat" value={form.bolovanje_procenat} onChange={handleInputChange} style={{width:'100%', padding:'0.6rem', marginTop:'0.2rem', background:'#0f172a', color:'white', border:'1px solid #334155', borderRadius:'4px'}} />
+                    </div>
+                  </div>
+
+                  <div style={{display:'flex', gap:'1rem', marginTop:'1rem'}}>
+                    <button type="submit" style={{flex:1, background:'#10b981', color:'white', border:'none', padding:'0.8rem', borderRadius:'4px', cursor:'pointer', fontWeight:'bold'}}>💾 Sačuvaj Radnika</button>
+                    {idZaIzmenu && <button type="button" onClick={()=>{setForm(POCETNO_STANJE_FORME); setIdZaIzmenu(null);}} style={{background:'#64748b', color:'white', border:'none', padding:'0.8rem', borderRadius:'4px', cursor:'pointer'}}>Otkaži</button>}
+                  </div>
                 </form>
               </div>
             )}
@@ -295,14 +345,13 @@ function App() {
         </div>
       )}
 
-      {/* === NOVI, POTPUNO REMONTOVANI MODAL ZA GODIŠNJI PREGLED === */}
+      {/* === MODAL ZA GODIŠNJI PREGLED === */}
       {prikaziGodisnji && godisnjiIzvestaj && (
         <div style={{position:'fixed', top:0, left:0, width:'100%', height:'100%', backgroundColor:'rgba(0,0,0,0.85)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:99999}}>
           <div style={{maxWidth:'600px', width:'95%', background:'#1f2937', padding:'2rem', borderRadius:'12px', color:'white', boxShadow:'0 20px 25px -5px rgba(0,0,0,0.5)', border:'1px solid #374151'}}>
             <h2 style={{marginTop:0, color:'white', fontSize:'1.6rem', borderBottom:'1px solid #374151', paddingBottom:'0.5rem'}}>Godišnji Izveštaj Zarade ({godisnjiIzvestaj.godina})</h2>
             <div style={{color:'#38bdf8', fontSize:'1.4rem', fontWeight:'bold', margin:'0.5rem 0 1.5rem 0'}}>{godisnjiIzvestaj.imeRadnika}</div>
             
-            {/* Tabela sa forsiranim svetlim bojama teksta */}
             <div style={{maxHeight:'280px', overflowY:'auto', background:'#111827', borderRadius:'8px', padding:'0.5rem', marginBottom:'1.5rem'}}>
               <table style={{width:'100%', borderCollapse:'collapse'}}>
                 <thead>
@@ -335,7 +384,7 @@ function App() {
               </div>
             </div>
 
-            <button onClick={()=>setPrikaziGodisnji(false)} style={{marginTop:'1.5rem', width:'100%', background:'#ef4444', color:'white', border:'none', padding:'0.8rem', borderRadius:'6px', cursor:'pointer', fontWeight:'bold', fontSize:'1rem', transition:'background 0.2s'}}>Zatvori Izveštaj</button>
+            <button onClick={()=>setPrikaziGodisnji(false)} style={{marginTop:'1.5rem', width:'100%', background:'#ef4444', color:'white', border:'none', padding:'0.8rem', borderRadius:'6px', cursor:'pointer', fontWeight:'bold', fontSize:'1rem'}}>Zatvori Izveštaj</button>
           </div>
         </div>
       )}
