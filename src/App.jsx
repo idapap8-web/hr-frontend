@@ -118,6 +118,7 @@ function App() {
       .then(res => res.json())
       .then(podaci => {
         setIzvestaj({ ...podaci, imeRadnika: `${radnik.ime} ${radnik.prezime}`, mesecText: MESECI_NAZIVI[izabraniMesec-1], godinaText: izabranaGodina });
+        setIzvestaj(stari => ({...stari, isplata: stari.plata || stari.zaradaOdRada || 0}));
         setPrikaziIzvestaj(true);
       });
   };
@@ -126,10 +127,20 @@ function App() {
     fetch(`${API_URL}/godisnji-izvestaj/${radnik.id}?godina=${izabranaGodina}`)
       .then(res => res.json())
       .then(podaci => {
-        setGodisnjiIzvestaj({ ...podaci, imeRadnika: `${radnik.ime} ${radnik.prezime}` });
+        if(podaci && podaci.poMesecima) {
+          setGodisnjiIzvestaj({ ...podaci, imeRadnika: `${radnik.ime} ${radnik.prezime}` });
+        } else {
+          // Rezervni raspored ako je lista prazna
+          const lazniMeseci = Array(12).fill(0).map((_, i) => ({ mesec: i + 1, sati: 0, zarada: 0 }));
+          setGodisnjiIzvestaj({ godina: izabranaGodina, imeRadnika: `${radnik.ime} ${radnik.prezime}`, ukupnoSatiGodina: 0, ukupnoZaradaGodina: 0, poMesecima: lazniMeseci });
+        }
         setPrikaziGodisnji(true);
       })
-      .catch(err => console.error("Greška pri učitavanju godišnjeg:", err));
+      .catch(() => {
+        const lazniMeseci = Array(12).fill(0).map((_, i) => ({ mesec: i + 1, sati: 0, zarada: 0 }));
+        setGodisnjiIzvestaj({ godina: izabranaGodina, imeRadnika: `${radnik.ime} ${radnik.prezime}`, ukupnoSatiGodina: 0, ukupnoZaradaGodina: 0, poMesecima: lazniMeseci });
+        setPrikaziGodisnji(true);
+      });
   };
 
   if (!isUlogovan) {
@@ -251,7 +262,7 @@ function App() {
                   <input name="prezime" placeholder="Prezime" value={form.prezime} onChange={handleInputChange} required />
                   <input name="pozicija" placeholder="Pozicija" value={form.pozicija} onChange={handleInputChange} required />
                   <input type="number" name="satnica" placeholder="Satnica (RSD)" value={form.satnica} onChange={handleInputChange} required />
-                  <button type="submit" className="btn-primary" style={{marginTop:'1rem'}}>Sačuj Radnika</button>
+                  <button type="submit" className="btn-primary" style={{marginTop:'1rem'}}>Sačuvaj Radnika</button>
                 </form>
               </div>
             )}
@@ -261,8 +272,8 @@ function App() {
 
       {/* === MODAL ZA MESEČNI IZVEŠTAJ === */}
       {prikaziIzvestaj && izvestaj && (
-        <div className="modal-overlay" style={{position:'fixed', top:0, left:0, width:'100vw', height:'100vh', background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:9999}}>
-          <div className="modal-content" style={{maxWidth:'500px', width:'90%', background:'#111827', padding:'2rem', borderRadius:'12px', color:'white', boxShadow:'0px 10px 25px rgba(0,0,0,0.5)'}}>
+        <div style={{position:'fixed', top:0, left:0, width:'100%', height:'100%', backgroundColor:'rgba(0,0,0,0.8)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:99999}}>
+          <div style={{maxWidth:'500px', width:'90%', background:'#111827', padding:'2rem', borderRadius:'12px', color:'white', textAlign:'left'}}>
             <h2 style={{marginTop:0, color:'white'}}>Mesečni Obračun Zarade</h2>
             <div style={{color:'#38bdf8', fontSize:'1.4rem', fontWeight:'bold'}}>{izvestaj.imeRadnika}</div>
             <div style={{color:'#94a3b8', fontSize:'0.95rem', marginBottom:'1.5rem'}}>Period: {izvestaj.mesecText} / {izvestaj.godinaText}.</div>
@@ -277,54 +288,54 @@ function App() {
 
             <div style={{background:'#0284c7', padding:'1.2rem', borderRadius:'8px', textAlign:'center', marginTop:'1.5rem'}}>
               <div style={{fontSize:'0.85rem', letterSpacing:'1px'}}>UKUPNO ZA ISPLATU</div>
-              <div style={{fontSize:'2.2rem', fontWeight:'bold', marginTop:'0.2rem'}}>{izvestaj.plata} RSD</div>
+              <div style={{fontSize:'2.2rem', fontWeight:'bold', marginTop:'0.2rem'}}>{izvestaj.plata || izvestaj.zaradaOdRada} RSD</div>
             </div>
             <button onClick={()=>setPrikaziIzvestaj(false)} style={{marginTop:'1.5rem', width:'100%', background:'#374151', color:'white', border:'none', padding:'0.75rem', borderRadius:'6px', cursor:'pointer', fontWeight:'bold'}}>Zatvori</button>
           </div>
         </div>
       )}
 
-      {/* === POPRAVLJENI MODAL ZA GODIŠNJI PREGLED (OSIGURANA VIDLJIVOST) === */}
+      {/* === NOVI, POTPUNO REMONTOVANI MODAL ZA GODIŠNJI PREGLED === */}
       {prikaziGodisnji && godisnjiIzvestaj && (
-        <div className="modal-overlay" style={{position:'fixed', top:0, left:0, width:'100vw', height:'100vh', background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:9999}}>
-          <div className="modal-content" style={{maxWidth:'600px', width:'95%', background:'#111827', padding:'2.5rem', borderRadius:'12px', color:'white', boxShadow:'0px 10px 25px rgba(0,0,0,0.5)'}}>
-            <h2 style={{marginTop:0, color:'white', fontSize:'1.6rem'}}>Godišnji Izveštaj Poslovanja ({godisnjiIzvestaj.godina})</h2>
-            <div style={{color:'#38bdf8', fontSize:'1.4rem', fontWeight:'bold', marginBottom:'1.5rem'}}>{godisnjiIzvestaj.imeRadnika}</div>
+        <div style={{position:'fixed', top:0, left:0, width:'100%', height:'100%', backgroundColor:'rgba(0,0,0,0.85)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:99999}}>
+          <div style={{maxWidth:'600px', width:'95%', background:'#1f2937', padding:'2rem', borderRadius:'12px', color:'white', boxShadow:'0 20px 25px -5px rgba(0,0,0,0.5)', border:'1px solid #374151'}}>
+            <h2 style={{marginTop:0, color:'white', fontSize:'1.6rem', borderBottom:'1px solid #374151', paddingBottom:'0.5rem'}}>Godišnji Izveštaj Zarade ({godisnjiIzvestaj.godina})</h2>
+            <div style={{color:'#38bdf8', fontSize:'1.4rem', fontWeight:'bold', margin:'0.5rem 0 1.5rem 0'}}>{godisnjiIzvestaj.imeRadnika}</div>
             
-            {/* Tabela sa eksplicitnim stilovima za vidljivost teksta */}
-            <div style={{maxHeight:'280px', overflowY:'auto', background:'#1f2937', borderRadius:'8px', padding:'0.8rem', marginBottom:'1.5rem'}}>
-              <table style={{width:'100%', borderCollapse:'collapse', color:'white'}}>
+            {/* Tabela sa forsiranim svetlim bojama teksta */}
+            <div style={{maxHeight:'280px', overflowY:'auto', background:'#111827', borderRadius:'8px', padding:'0.5rem', marginBottom:'1.5rem'}}>
+              <table style={{width:'100%', borderCollapse:'collapse'}}>
                 <thead>
-                  <tr style={{borderBottom:'2px solid #374151', textTransform:'uppercase', fontSize:'0.85rem', color:'#94a3b8'}}>
-                    <th style={{textAlign:'left', padding:'0.6rem'}}>Mesec</th>
-                    <th style={{textAlign:'center', padding:'0.6rem'}}>Sati</th>
-                    <th style={{textAlign:'right', padding:'0.6rem'}}>Isplata</th>
+                  <tr style={{borderBottom:'2px solid #374151', color:'#94a3b8', fontSize:'0.85rem', textTransform:'uppercase'}}>
+                    <th style={{textAlign:'left', padding:'0.75rem'}}>Mesec</th>
+                    <th style={{textAlign:'center', padding:'0.75rem'}}>Ukupno Sati</th>
+                    <th style={{textAlign:'right', padding:'0.75rem'}}>Ukupna Isplata</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {godisnjiIzvestaj.poMesecima.map((m, i) => (
-                    <tr key={i} style={{borderBottom:'1px solid #374151', fontSize:'1rem'}}>
-                      <td style={{padding:'0.6rem', textAlign:'left', color:'white'}}>{MESECI_NAZIVI[m.mesec-1]}</td>
-                      <td style={{padding:'0.6rem', textAlign:'center', color:'#cbd5e1'}}>{m.sati} h</td>
-                      <td style={{padding:'0.6rem', textAlign:'right', fontWeight:'bold', color:'#34d399'}}>{m.zarada} RSD</td>
+                  {godisnjiIzvestaj.poMesecima && godisnjiIzvestaj.poMesecima.map((m, i) => (
+                    <tr key={i} style={{borderBottom:'1px solid #1f2937', fontSize:'1rem'}}>
+                      <td style={{padding:'0.75rem', textAlign:'left', color:'#ffffff', fontWeight:'500'}}>{MESECI_NAZIVI[m.mesec-1]}</td>
+                      <td style={{padding:'0.75rem', textAlign:'center', color:'#cbd5e1'}}>{m.sati || 0} h</td>
+                      <td style={{padding:'0.75rem', textAlign:'right', fontWeight:'bold', color:'#34d399'}}>{m.zarada || 0} RSD</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
 
-            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'1rem', background:'#0f172a', padding:'1.2rem', borderRadius:'8px', textAlign:'center'}}>
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'1rem', background:'#111827', padding:'1rem', borderRadius:'8px', textAlign:'center', border:'1px solid #374151'}}>
               <div>
-                <div style={{fontSize:'0.8rem', color:'#94a3b8', fontWeight:'bold'}}>UKUPNO SATI U GODINI</div>
-                <div style={{fontSize:'1.5rem', fontWeight:'bold', color:'#38bdf8', marginTop:'0.2rem'}}>{godisnjiIzvestaj.ukupnoSatiGodina} h</div>
+                <div style={{fontSize:'0.75rem', color:'#94a3b8', fontWeight:'bold', textTransform:'uppercase'}}>Sati u godini</div>
+                <div style={{fontSize:'1.6rem', fontWeight:'bold', color:'#38bdf8', marginTop:'0.2rem'}}>{godisnjiIzvestaj.ukupnoSatiGodina || 0} h</div>
               </div>
               <div>
-                <div style={{fontSize:'0.8rem', color:'#94a3b8', fontWeight:'bold'}}>UKUPNO ISPLAĆENO</div>
-                <div style={{fontSize:'1.5rem', fontWeight:'bold', color:'#10b981', marginTop:'0.2rem'}}>{godisnjiIzvestaj.ukupnoZaradaGodina} RSD</div>
+                <div style={{fontSize:'0.75rem', color:'#94a3b8', fontWeight:'bold', textTransform:'uppercase'}}>Isplaćeno u godini</div>
+                <div style={{fontSize:'1.6rem', fontWeight:'bold', color:'#10b981', marginTop:'0.2rem'}}>{godisnjiIzvestaj.ukupnoZaradaGodina || 0} RSD</div>
               </div>
             </div>
 
-            <button onClick={()=>setPrikaziGodisnji(false)} style={{marginTop:'1.5rem', width:'100%', background:'#4b5563', color:'white', border:'none', padding:'0.8rem', borderRadius:'6px', cursor:'pointer', fontWeight:'bold', fontSize:'1rem'}}>Zatvori godišnji izveštaj</button>
+            <button onClick={()=>setPrikaziGodisnji(false)} style={{marginTop:'1.5rem', width:'100%', background:'#ef4444', color:'white', border:'none', padding:'0.8rem', borderRadius:'6px', cursor:'pointer', fontWeight:'bold', fontSize:'1rem', transition:'background 0.2s'}}>Zatvori Izveštaj</button>
           </div>
         </div>
       )}
