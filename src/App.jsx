@@ -67,7 +67,7 @@ function App() {
   const [godisnjiIzvestaj, setGodisnjiIzvestaj] = useState(null);
   const [prikaziGodisnji, setPrikaziGodisnji] = useState(false);
 
-  // POMOĆNE STATISTIKE ZA NOVA POČETNU STRANU
+  // POMOĆNE STATISTIKE ZA NOVU POČETNU STRANU
   const [statsFirme, setStatsFirme] = useState({ ukupnoSati: 0, ukupnoZarada: 0 });
 
   const uzmiDatumeTekuceNedelje = () => {
@@ -132,7 +132,7 @@ function App() {
       lokalniObracunStats(podaciRaspored, podaciRadnici);
     } catch (err) {
       console.error(err);
-    } filey {
+    } finally {
       setUcitavam(false);
     }
   };
@@ -328,7 +328,7 @@ function App() {
                 </div>
               )}
 
-              {/* === ZAPOSLENI I IZVEŠTAJI (TVOJ KOREN - NETAKNUTO) === */}
+              {/* === ZAPOSLENI I IZVEŠTAJI === */}
               {aktivniTab === 'radnici' && (
                 <div className="fade-in">
                   <div className="cards-grid">
@@ -358,7 +358,7 @@ function App() {
                 </div>
               )}
 
-              {/* === PLANER (TVOJ KOREN - NETAKNUTO) === */}
+              {/* === PLANER === */}
               {aktivniTab === 'planer' && (
                 <div className="fade-in">
                   <div className="table-container">
@@ -396,7 +396,7 @@ function App() {
                 </div>
               )}
 
-              {/* === POSTAVKE (TVOJ KOREN - NETAKNUTO) === */}
+              {/* === POSTAVKE === */}
               {aktivniTab === 'postavke' && (
                 <div className="fade-in">
                   <form onSubmit={sacuvajRadnika} className="hr-form" style={{maxWidth:'650px', margin:'0 auto', display:'flex', flexDirection:'column', gap:'0.8rem', background:'#1e293b', padding:'2rem', borderRadius:'8px', color:'white'}}>
