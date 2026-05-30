@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import './App.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-const DANI_U_NEDELJI = ['Ponedeljak', 'Utorak', 'Sreda', 'Četvrtak', 'Petak', 'Subota', 'Nedelja'];
+const DANI_NAZIVI = ['Pon', 'Uto', 'Sre', 'Čet', 'Pet', 'Sub', 'Ned'];
 
 const POCETNO_STANJE_FORME = {
   ime: '', prezime: '', pozicija: '', satnica: '',
@@ -31,6 +31,26 @@ function App() {
   const [kalendarRadnikId, setKalendarRadnikId] = useState(null);
   const [novoOdsustvo, setNovoOdsustvo] = useState({ od: '', do: '', tip: 'GO' });
 
+  // Pomoćna funkcija za generisanje datuma tekuće nedelje
+  const uzmiDatumeTekuceNedelje = () => {
+    const danas = new Date();
+    const danUNedelji = danas.getDay();
+    const razlikaDoPonedeljka = danas.getDate() - danUNedelji + (danUNedelji === 0 ? -6 : 1);
+    
+    const ponedeljak = new Date(danas.setDate(razlikaDoPonedeljka));
+    const datumi = [];
+    
+    for (let i = 0; i < 7; i++) {
+      const sledeciDan = new Date(ponedeljak);
+      sledeciDan.setDate(ponedeljak.getDate() + i);
+      const isoFormat = sledeciDan.toISOString().split('T')[0];
+      datumi.push({ naziv: DANI_NAZIVI[i], formatirano: isoFormat });
+    }
+    return datumi;
+  };
+
+  const [trenutnaNedelja] = useState(uzmiDatumeTekuceNedelje());
+
   const ucitajPodatke = async () => {
     try {
       const [resZaposleni, resRaspored, resOdsustva] = await Promise.all([
@@ -42,7 +62,7 @@ function App() {
       setRaspored(await resRaspored.json());
       setOdsustva(await resOdsustva.json());
     } catch (err) {
-      console.error("Greška pri učitavanju:", err);
+      console.error("Greška:", err);
     } finally {
       setUcitavam(false);
     }
@@ -55,15 +75,9 @@ function App() {
     setForm(stari => ({ ...stari, [name]: value }));
   };
 
-  const handleOdsustvoChange = (e) => {
-    const { name, value } = e.target;
-    setNovoOdsustvo(stari => ({ ...stari, [name]: value }));
-  };
-
   const sacuvajRadnika = (e) => {
     e.preventDefault();
     const url = idZaIzmenu ? `${API_URL}/zaposleni/${idZaIzmenu}` : `${API_URL}/zaposleni`;
-    
     fetch(url, { 
       method: idZaIzmenu ? 'PUT' : 'POST', 
       headers: { 'Content-Type': 'application/json' }, 
@@ -104,7 +118,7 @@ function App() {
         tip: novoOdsustvo.tip 
       })
     }).then(() => {
-      alert('Odsustvo sačuvano');
+      alert('Odsustvo uspešno upisano!');
       ucitajPodatke();
       setPrikaziKalendar(false);
       setNovoOdsustvo({ od: '', do: '', tip: 'GO' });
@@ -115,16 +129,8 @@ function App() {
     fetch(`${API_URL}/odsustva/${id}`, { method: 'DELETE' }).then(() => ucitajPodatke());
   };
 
-  const proveriPreklapanjeOdsustva = (radnikId, dan) => {
-    const indeksDana = DANI_U_NEDELJI.indexOf(dan);
-    if (indeksDana === -1) return null;
-
-    const danas = new Date();
-    const trenutniIndeks = danas.getDay() === 0 ? 6 : danas.getDay() - 1; 
-    const razlika = indeksDana - trenutniIndeks;
-    
-    const targetDatum = new Date(danas);
-    targetDatum.setDate(danas.getDate() + razlika);
+  const proveriPreklapanjeOdsustva = (radnikId, datumString) => {
+    const targetDatum = new Date(datumString);
     targetDatum.setHours(0, 0, 0, 0);
 
     const aktivnoOdsustvo = odsustva.find(o => {
@@ -137,40 +143,29 @@ function App() {
     return aktivnoOdsustvo ? aktivnoOdsustvo.tip : null;
   };
 
-  const sacuvajSmenu = (radnikId, dan, pocetak, kraj) => {
-    const tipOdsustva = proveriPreklapanjeOdsustva(radnikId, dan);
+  const sacuvajSmenu = (radnikId, datum, pocetak, kraj) => {
+    const tipOdsustva = proveriPreklapanjeOdsustva(radnikId, datum);
     if (tipOdsustva && pocetak !== '' && pocetak.toUpperCase() !== 'GO' && pocetak.toUpperCase() !== 'BOL') {
-      if (!window.confirm(`Upozorenje: Radnik ima odobren ${tipOdsustva} za ovaj dan. Da li i pored toga želite da upišete smenu?`)) {
-        return;
-      }
+      if (!window.confirm(`Radnik ima odobren ${tipOdsustva} za taj dan. Upisati smenu uprkos tome?`)) return;
     }
-
-    setRaspored(stari => {
-      const ostali = stari.filter(r => !(r.zaposleni_id === radnikId && r.dan === dan));
-      return [...ostali, { zaposleni_id: radnikId, dan, pocetak, kraj }];
-    });
 
     fetch(`${API_URL}/raspored`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ zaposleni_id: radnikId, dan, pocetak, kraj })
+      body: JSON.stringify({ zaposleni_id: radnikId, datum, pocetak, kraj })
+    }).then(() => {
+      setRaspored(stari => {
+        const ostali = stari.filter(r => !(r.zaposleni_id === radnikId && r.datum === datum));
+        return [...ostali, { zaposleni_id: radnikId, datum, pocetak, kraj }];
+      });
     });
   };
 
-  const kopirajProsluNedelju = () => {
-    if (window.confirm("Da li želite da kopirate trenutni raspored kao osnovu?")) {
-      alert("Raspored uspešno dupliciran za naredni period!");
-      ucitajPodatke();
-    }
-  };
-
-  const izracunajPlaniraneSate = (radnikId) => {
+  const izracunajPlaniraneSateUNedelji = (radnikId) => {
     return raspored
-      .filter(r => r.zaposleni_id === radnikId)
+      .filter(r => r.zaposleni_id === radnikId && trenutnaNedelja.some(n => n.formatirano === r.datum))
       .reduce((ukupno, smena) => {
-        if (!smena.pocetak || !smena.kraj || isNaN(parseInt(smena.pocetak)) || isNaN(parseInt(smena.kraj))) {
-          return ukupno;
-        }
+        if (!smena.pocetak || !smena.kraj || ['GO','BOL'].includes(smena.pocetak.toUpperCase())) return ukupno;
         let p = parseInt(smena.pocetak.split(':')[0]);
         let k = parseInt(smena.kraj.split(':')[0]);
         if (k === 0) k = 24; 
@@ -179,11 +174,8 @@ function App() {
   };
 
   const izracunajUkupneSateFirme = () => {
-    return zaposleni.reduce((Zbir, radnik) => Zbir + izracunajPlaniraneSate(radnik.id), 0);
+    return zaposleni.reduce((Zbir, radnik) => Zbir + izracunajPlaniraneSateUNedelji(radnik.id), 0);
   };
-
-  const evidencijaDolazak = (id) => fetch(`${API_URL}/evidencija/dolazak`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ zaposleni_id: id }) }).then(() => alert('Dolazak evidentiran'));
-  const AnalyticsOdlazak = (id) => fetch(`${API_URL}/evidencija/odlazak`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ zaposleni_id: id }) }).then(() => alert('Odlazak evidentiran'));
 
   const generisiIzvestaj = (id, imePrezime, trazeniMesec, trazenaGodina) => {
     setAktivniRadnik({ id, ime: imePrezime });
@@ -193,18 +185,18 @@ function App() {
         setIzvestaj({ ...podaci, imeRadnika: imePrezime }); 
         setPrikaziIzvestaj(true); 
       })
-      .catch(() => alert("Greška pri učitavanju izveštaja."));
+      .catch(() => alert("Greška pri generisanju izveštaja."));
   };
 
   return (
     <div className="app-container">
       <header className="app-header">
-        <h1>HR Menadžment</h1>
-        <p>Evidencija i raspored rada</p>
+        <h1>HR Automatski Menadžment</h1>
+        <p>Obračun plate se vrši direktno na osnovu smena iz planera</p>
       </header>
 
       <form onSubmit={sacuvajRadnika} className="hr-form">
-        <h3>{idZaIzmenu ? 'Izmena podataka' : 'Novi zaposleni'}</h3>
+        <h3>{idZaIzmenu ? 'Izmena podataka radnika' : 'Dodaj novog zaposlenog'}</h3>
         <div className="form-row">
           <input name="ime" placeholder="Ime" value={form.ime} onChange={handleInputChange} required />
           <input name="prezime" placeholder="Prezime" value={form.prezime} onChange={handleInputChange} required />
@@ -213,11 +205,11 @@ function App() {
         
         <div className="form-section">
           <div className="section-item">
-            <label>Satnica:</label>
+            <label>Satnica (RSD):</label>
             <input type="number" name="satnica" value={form.satnica} onChange={handleInputChange} required className="input-small" />
           </div>
           <div className="section-item">
-            <label>Noćna od:</label>
+            <label>Noćna smena od:</label>
             <input type="time" name="nocna_pocetak" value={form.nocna_pocetak} onChange={handleInputChange} />
           </div>
           <div className="section-item">
@@ -228,15 +220,15 @@ function App() {
         
         <div className="form-section grid-4">
           <div className="section-item">
-            <label>Bonus noćna (%):</label>
+            <label>Noćni bonus (%):</label>
             <input type="number" name="nocni_bonus" value={form.nocni_bonus} onChange={handleInputChange} />
           </div>
           <div className="section-item">
-            <label>Praznik (%):</label>
+            <label>Praznik bonus (%):</label>
             <input type="number" name="praznik_bonus" value={form.praznik_bonus} onChange={handleInputChange} />
           </div>
           <div className="section-item">
-            <label>Plaćen GO (%):</label>
+            <label>Godišnji odmor (%):</label>
             <input type="number" name="go_procenat" value={form.go_procenat} onChange={handleInputChange} />
           </div>
           <div className="section-item">
@@ -246,7 +238,7 @@ function App() {
         </div>
         
         <div className="form-buttons">
-          <button type="submit" className="btn-primary">Sačuvaj</button>
+          <button type="submit" className="btn-primary">Sačuvaj radnika</button>
           {idZaIzmenu && (
             <button type="button" className="btn-secondary" onClick={() => { setForm(POCETNO_STANJE_FORME); setIdZaIzmenu(null); }}>
               Odustani
@@ -263,17 +255,12 @@ function App() {
               <div className="worker-role">{radnik.pozicija}</div>
               
               <button onClick={() => { setKalendarRadnikId(radnik.id); setPrikaziKalendar(true); }} className="btn-action info">
-                📅 Unesi odsustvo
+                📅 Evidencija Odsustva (GO/BOL)
               </button>
               
               <button onClick={() => generisiIzvestaj(radnik.id, `${radnik.ime} ${radnik.prezime}`, izabraniMesec, izabranaGodina)} className="btn-action dark">
-                Mesečni izveštaj
+                📊 Obračunaj platu (Mesec)
               </button>
-              
-              <div className="attendance-buttons">
-                <button onClick={() => evidencijaDolazak(radnik.id)} className="btn-attendance success">Dolazak</button>
-                <button onClick={() => AnalyticsOdlazak(radnik.id)} className="btn-attendance danger">Odlazak</button>
-              </div>
 
               <div className="card-footer-buttons">
                 <button onClick={() => pripremiZaIzmenu(radnik)} className="btn-outline info">Izmeni</button>
@@ -286,16 +273,17 @@ function App() {
 
       <div className="table-container">
         <div className="table-header-row">
-          <h2>Raspored smena (Dozvoljen unos 'GO' ili 'BOL')</h2>
-          <button onClick={kopirajProsluNedelju} className="btn-copy">📋 Kopiraj raspored</button>
+          <h2>Nedeljni planer smena (Unos 'GO' ili 'BOL' računa sate za platu)</h2>
         </div>
         <div className="scrollable-table">
           <table>
             <thead>
               <tr>
                 <th className="text-left">Zaposleni</th>
-                {DANI_U_NEDELJI.map(dan => <th key={dan}>{dan}</th>)}
-                <th>Ukupno sati</th>
+                {trenutnaNedelja.map(dan => (
+                  <th key={dan.formatirano}>{dan.naziv} <br/><small style={{color:'#94a3b8'}}>{dan.formatirano.split('-')[2]}.{dan.formatirano.split('-')[1]}</small></th>
+                ))}
+                <th>Sati ove nedelje</th>
               </tr>
             </thead>
             <tbody>
@@ -304,44 +292,44 @@ function App() {
                   <tr key={`planer-${radnik.id}`}>
                     <td className="text-left font-light">{radnik.ime} {radnik.prezime}</td>
                     
-                    {DANI_U_NEDELJI.map(dan => {
-                      const smena = raspored.find(r => r.zaposleni_id === radnik.id && r.dan === dan) || { pocetak: '', kraj: '' };
+                    {trenutnaNedelja.map(dan => {
+                      const smena = raspored.find(r => r.zaposleni_id === radnik.id && r.datum === dan.formatirano) || { pocetak: '', kraj: '' };
                       const valPocetak = (smena.pocetak || '').toUpperCase();
-                      const imaOdsustvo = proveriPreklapanjeOdsustva(radnik.id, dan);
+                      const imaOdsustvo = proveriPreklapanjeOdsustva(radnik.id, dan.formatirano);
                       
                       let klasaBoje = 'text-white';
                       if (valPocetak === 'GO' || imaOdsustvo === 'GO') klasaBoje = 'text-yellow';
                       if (valPocetak === 'BOL' || imaOdsustvo === 'BOLOVANJE') klasaBoje = 'text-red';
                       
                       return (
-                        <td key={dan}>
+                        <td key={dan.formatirano}>
                           <div className="table-inputs-group">
                             <input 
                               type="text" 
                               value={smena.pocetak || ''} 
-                              onChange={(e) => sacuvajSmenu(radnik.id, dan, e.target.value, smena.kraj)} 
+                              onChange={(e) => sacuvajSmenu(radnik.id, dan.formatirano, e.target.value, smena.kraj)} 
                               placeholder={imaOdsustvo ? imaOdsustvo : "08:00"} 
-                              className={`${klasaBoje} ${imaOdsustvo ? 'input-warning' : ''}`} 
+                              className={`${klasaBoje}`} 
                             />
                             <input 
                               type="text" 
                               value={smena.kraj || ''} 
-                              onChange={(e) => sacuvajSmenu(radnik.id, dan, smena.pocetak, e.target.value)} 
+                              onChange={(e) => sacuvajSmenu(radnik.id, dan.formatirano, smena.pocetak, e.target.value)} 
                               placeholder={imaOdsustvo ? "SLOB" : "16:00"} 
-                              className={`${klasaBoje} ${imaOdsustvo ? 'input-warning' : ''}`} 
+                              className={`${klasaBoje}`} 
                             />
                           </div>
                         </td>
                       );
                     })}
-                    <td className="font-bold">{izracunajPlaniraneSate(radnik.id)} h</td>
+                    <td className="font-bold">{izracunajPlaniraneSateUNedelji(radnik.id)} h</td>
                   </tr>
                 );
               })}
               
               <tr className="table-summary-row">
-                <td className="text-left font-bold text-sky">Ukupno planirano (Firma):</td>
-                {DANI_U_NEDELJI.map(dan => <td key={`prazno-${dan}`}></td>)}
+                <td className="text-left font-bold text-sky">Ukupno firma (Ove nedelje):</td>
+                {trenutnaNedelja.map(dan => <td key={`prazno-${dan.formatirano}`}></td>)}
                 <td className="font-bold text-sky">{izracunajUkupneSateFirme()} h</td>
               </tr>
             </tbody>
@@ -356,34 +344,24 @@ function App() {
             <form onSubmit={sacuvajOdsustvo} className="modal-form">
               <div>
                 <label>Tip odsustva:</label>
-                <select name="tip" value={novoOdsustvo.tip} onChange={handleOdsustvoChange}>
+                <select name="tip" value={novoOdsustvo.tip} onChange={(e)=>setNovoOdsustvo({...novoOdsustvo, tip: e.target.value})}>
                   <option value="GO">Godišnji odmor</option>
                   <option value="BOLOVANJE">Bolovanje</option>
                 </select>
               </div>
               <div>
                 <label>Od datuma:</label>
-                <input type="date" name="od" required value={novoOdsustvo.od} onChange={handleOdsustvoChange} />
+                <input type="date" name="od" required value={novoOdsustvo.od} onChange={(e)=>setNovoOdsustvo({...novoOdsustvo, od: e.target.value})} />
               </div>
               <div>
                 <label>Do datuma:</label>
-                <input type="date" name="do" required value={novoOdsustvo.do} onChange={handleOdsustvoChange} />
+                <input type="date" name="do" required value={novoOdsustvo.do} onChange={(e)=>setNovoOdsustvo({...novoOdsustvo, do: e.target.value})} />
               </div>
               <div className="modal-buttons">
                 <button type="submit" className="btn-action info">Sačuvaj</button>
                 <button type="button" className="btn-action dark" onClick={() => setPrikaziKalendar(false)}>Zatvori</button>
               </div>
             </form>
-
-            <div className="modal-listing">
-              <h4>Trenutna odsustva radnika:</h4>
-              {odsustva.filter(o => o.zaposleni_id === kalendarRadnikId).map(ods => (
-                <div key={ods.id} className="listing-item">
-                  <span>{ods.tip} ({new Date(ods.datum_od).toLocaleDateString('sr-RS')} - {new Date(ods.datum_do).toLocaleDateString('sr-RS')})</span>
-                  <button onClick={() => obrisiOdsustvo(ods.id)} className="btn-delete-text">X</button>
-                </div>
-              ))}
-            </div>
           </div>
         </div>
       )}
@@ -391,7 +369,7 @@ function App() {
       {prikaziIzvestaj && izvestaj && (
         <div className="modal-overlay">
           <div className="modal-content scrollable-y">
-            <h2>Izveštaj zarade</h2>
+            <h2>Automatski Izveštaj Zarade</h2>
             <div className="modal-subtitle">{izvestaj.imeRadnika}</div>
 
             <div className="modal-filters">
@@ -401,21 +379,20 @@ function App() {
                 <option value="9">Septembar</option><option value="10">Oktobar</option><option value="11">Novembar</option><option value="12">Decembar</option>
               </select>
               <select value={izabranaGodina} onChange={(e) => { setIzabranaGodina(e.target.value); generisiIzvestaj(aktivniRadnik.id, aktivniRadnik.ime, izabraniMesec, e.target.value); }}>
-                <option value="2024">2024</option><option value="2025">2025</option><option value="2026">2026</option>
+                <option value="2025">2025</option><option value="2026">2026</option>
               </select>
             </div>
 
             <div className="report-block">
               <div className="report-row"><span className="label">Osnovna satnica:</span><span>{izvestaj.satnica} RSD</span></div>
               <div className="divider"></div>
-              <div className="report-row"><span className="label">Redovni sati:</span><span>{izvestaj.ukupnoSati} h</span></div>
-              <div className="report-row"><span className="label">Od toga noćni:</span><span>{izvestaj.nocniSati} h</span></div>
-              <div className="report-row"><span className="label">Od toga praznični:</span><span>{izvestaj.praznicniSati} h</span></div>
+              <div className="report-row"><span className="label">Odrađeni sati iz planera:</span><span>{izvestaj.ukupnoSati} h</span></div>
+              <div className="report-row"><span className="label">Od toga noćni sati:</span><span>{izvestaj.nocniSati} h</span></div>
               <div className="report-row highlight"><span className="font-bold">Zarada od rada:</span><span className="font-bold">{izvestaj.zaradaOdRada} RSD</span></div>
             </div>
 
             <div className="report-block">
-              <h4>Odsustva (samo radni dani)</h4>
+              <h4>Odsustva zabeležena u planeru</h4>
               <div className="report-row"><span className="label">Godišnji odmor ({izvestaj.goProcenat}%):</span><span className="text-yellow">{izvestaj.satiGO} h</span></div>
               <div className="report-row text-yellow"><span className="label">Naknada za GO:</span><span>{izvestaj.zaradaGO} RSD</span></div>
               <div className="divider"></div>
