@@ -23,8 +23,8 @@ function App() {
   const [unosLozinke, setUnosLozinke] = useState('');
   const [greskaLozinka, setGreskaLozinka] = useState(false);
 
-  // --- STATE ZA NAVIGACIJU ---
-  const [aktivniTab, setAktivniTab] = useState('radnici');
+  // --- STATE ZA NAVIGACIJU (Početna je ponovo prva) ---
+  const [aktivniTab, setAktivniTab] = useState('pocetna');
 
   const [zaposleni, setZaposleni] = useState([]);
   const [raspored, setRaspored] = useState([]); 
@@ -65,7 +65,7 @@ function App() {
 
   const [trenutnaNedelja] = useState(uzmiDatumeTekuceNedelje());
 
-  // MAKSIMALNO BEZBEDNO UCITAVANJE KOJE SPREČAVA PAD NA .MAP()
+  // Bezbedno učitavanje podataka sa servera
   const ucitajPodatke = async () => {
     try {
       const [resZaposleni, resRaspored, resOdsustva] = await Promise.all([
@@ -78,7 +78,6 @@ function App() {
       const podaciRaspored = await resRaspored.json();
       const podaciOdsustva = await resOdsustva.json();
 
-      // Provera da li su vraćeni nizovi kako ne bi došlo do pucanja aplikacije
       setZaposleni(Array.isArray(podaciZaposleni) ? podaciZaposleni : []);
       setRaspored(Array.isArray(podaciRaspored) ? podaciRaspored : []);
       setOdsustva(Array.isArray(podaciOdsustva) ? podaciOdsustva : []);
@@ -137,6 +136,7 @@ function App() {
       bolovanje_procenat: radnik.bolovanje_procenat || '65'
     });
     setIdZaIzmenu(radnik.id); 
+    setAktivniTab('postavke'); // Automatski prebaci na formu za izmenu
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -234,11 +234,10 @@ function App() {
       html2canvas:  { scale: 2, useCORS: true },
       jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
     };
-
     html2pdf().set(opt).from(element).save();
   };
 
-  // --- FUNKCIJA ZA PREUZIMANJE EXCEL-a (ISPRAVLJENO SVE) ---
+  // --- FUNKCIJA ZA PREUZIMANJE EXCEL-a ---
   const preuzmiExcelIzvestaj = () => {
     const podaciZaExcel = [
       { "Stavka": "Zaposleni", "Vrednost / Iznos": izvestaj.imeRadnika },
@@ -252,7 +251,7 @@ function App() {
       { "Stavka": "Sati Godišnjeg odmora (GO)", "Vrednost / Iznos": `${izvestaj.satiGO} h` },
       { "Stavka": "Naknada za GO", "Vrednost / Iznos": `${izvestaj.zaradaGO} RSD` },
       { "Stavka": "", "Vrednost / Iznos": "" },
-      { "Stavka": "Sati Bolovanja", "Vrednost / Iznos": `${izvestaj.satiGO || izvestaj.satiBolovanje} h` },
+      { "Stavka": "Sati Bolovanja", "Vrednost / Iznos": `${izvestaj.satiBolovanje} h` },
       { "Stavka": "Naknada za Bolovanje", "Vrednost / Iznos": `${izvestaj.zaradaBolovanje} RSD` },
       { "Stavka": "", "Vrednost / Iznos": "" },
       { "Stavka": "UKUPNO ZA ISPLATU", "Vrednost / Iznos": `${izvestaj.plata} RSD` }
@@ -261,9 +260,7 @@ function App() {
     const worksheet = XLSX.utils.json_to_sheet(podaciZaExcel);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Obracun Zarade");
-
     worksheet['!cols'] = [{ wch: 30 }, { wch: 25 }];
-
     XLSX.writeFile(workbook, `Obracun_${izvestaj.imeRadnika.replace(' ', '_')}_${izabraniMesec}_${izabranaGodina}.xlsx`);
   };
 
@@ -300,6 +297,9 @@ function App() {
       </header>
 
       <nav className="navbar">
+        <button className={`nav-link ${aktivniTab === 'pocetna' ? 'active' : ''}`} onClick={() => setAktivniTab('pocetna')}>
+          🏠 Početna
+        </button>
         <button className={`nav-link ${aktivniTab === 'radnici' ? 'active' : ''}`} onClick={() => setAktivniTab('radnici')}>
           👥 Zaposleni
         </button>
@@ -314,6 +314,63 @@ function App() {
       <main className="tab-content">
         {ucitavam ? <p className="loading">Učitavanje podataka...</p> : (
           <>
+            {/* === TAB 0: POČETNA STRANA (DASHBOARD) === */}
+            {aktivniTab === 'pocetna' && (
+              <div className="fade-in">
+                <div className="section-header-box">
+                  <h2>Kontrolna Tabla Menadžera</h2>
+                  <p>Brzi analitički pregled rada i stanja u firmi za tekuću nedelju</p>
+                </div>
+
+                {/* Statističke kartice */}
+                <div className="dashboard-stats-grid">
+                  <div className="stat-box">
+                    <span className="stat-icon">👥</span>
+                    <div className="stat-info">
+                      <h3>{zaposleni.length}</h3>
+                      <p>Ukupno zaposlenih</p>
+                    </div>
+                  </div>
+                  <div className="stat-box">
+                    <span className="stat-icon">⏱️</span>
+                    <div className="stat-info">
+                      <h3>{izracunajUkupneSateFirme()} h</h3>
+                      <p>Sati planirani ove nedelje</p>
+                    </div>
+                  </div>
+                  <div className="stat-box">
+                    <span className="stat-icon">🌴</span>
+                    <div className="stat-info">
+                      <h3>{odsustva.filter(o => o.tip === 'GO').length}</h3>
+                      <p>Aktivnih godišnjih odmora</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Brze akcije i obaveštenja */}
+                <div className="dashboard-layout" style={{ marginTop: '2rem', display: 'flex', gap: '20px' }}>
+                  <div className="dashboard-card" style={{ flex: 1, background: '#1e293b', padding: '20px', borderRadius: '8px' }}>
+                    <h3>🚀 Brze prečice</h3>
+                    <p>Izvršite najčešće menadžerske operacije jednim klikom:</p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '15px' }}>
+                      <button onClick={() => setAktivniTab('planer')} className="btn-action info">📅 Otvori ovonedeljni planer</button>
+                      <button onClick={() => setAktivniTab('postavke')} className="btn-action dark">➕ Dodaj novog radnika u sistem</button>
+                    </div>
+                  </div>
+
+                  <div className="dashboard-card" style={{ flex: 1, background: '#1e293b', padding: '20px', borderRadius: '8px' }}>
+                    <h3>📌 Status sistema</h3>
+                    <p>Svi moduli rade sinhronizovano sa lokalnom bazom podataka.</p>
+                    <ul style={{ paddingLeft: '20px', color: '#94a3b8', marginTop: '10px', lineHeight: '1.6' }}>
+                      <li>Baza podataka phpMyAdmin: <span style={{color:'#16a34a'}}>Povezano</span></li>
+                      <li>Modul za PDF izveštaje: <span style={{color:'#16a34a'}}>Spreman</span></li>
+                      <li>Modul za Excel (SheetJS): <span style={{color:'#16a34a'}}>Spreman</span></li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* === TAB 1: ZAPOSLENI === */}
             {aktivniTab === 'radnici' && (
               <div className="fade-in">
