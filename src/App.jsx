@@ -1,10 +1,7 @@
 import { useState, useEffect } from 'react';
 import './App.css';
-// Uvoz biblioteka za eksport fajlova
-import html2pdf from 'html2pdf.js';
-import * as XLSX from 'xlsx';
 
-// Podešeno na tvoj lokalni server na računaru
+// Podešeno na tvoj lokalni server na računaru kako ne bi čitao sa ugašenog Rendera
 const API_URL = 'http://localhost:3000';
 const DANI_NAZIVI = ['Pon', 'Uto', 'Sre', 'Čet', 'Pet', 'Sub', 'Ned'];
 
@@ -23,7 +20,7 @@ function App() {
   const [unosLozinke, setUnosLozinke] = useState('');
   const [greskaLozinka, setGreskaLozinka] = useState(false);
 
-  // --- STATE ZA NAVIGACIJU (Početna je ponovo prva) ---
+  // --- STATE ZA NAVIGACIJU (Početna strana je prva) ---
   const [aktivniTab, setAktivniTab] = useState('pocetna');
 
   const [zaposleni, setZaposleni] = useState([]);
@@ -65,22 +62,25 @@ function App() {
 
   const [trenutnaNedelja] = useState(uzmiDatumeTekuceNedelje());
 
-  // Bezbedno učitavanje podataka sa servera
+  // MAKSIMALNO BEZBEDNO UCITAVANJE: Ako server pošalje grešku (npr. Unknown column), aplikacija se NE blokira
   const ucitajPodatke = async () => {
+    setUcitavam(true);
     try {
       const [resZaposleni, resRaspored, resOdsustva] = await Promise.all([
-        fetch(`${API_URL}/zaposleni`),
-        fetch(`${API_URL}/raspored`),
-        fetch(`${API_URL}/odsustva`)
+        fetch(`${API_URL}/zaposleni`).catch(() => null),
+        fetch(`${API_URL}/raspored`).catch(() => null),
+        fetch(`${API_URL}/odsustva`).catch(() => null)
       ]);
       
-      const podaciZaposleni = await resZaposleni.json();
-      const podaciRaspored = await resRaspored.json();
-      const podaciOdsustva = await resOdsustva.json();
+      let podaciZaposleni = resZaposleni ? await resZaposleni.json() : [];
+      let podaciRaspored = resRaspored ? await resRaspored.json() : [];
+      let podaciOdsustva = resOdsustva ? await resOdsustva.json() : [];
 
+      // Ako server vrati objekat greške umesto niza podataka, pretvaramo ga u prazan niz da sprečimo pucanje
       setZaposleni(Array.isArray(podaciZaposleni) ? podaciZaposleni : []);
       setRaspored(Array.isArray(podaciRaspored) ? podaciRaspored : []);
       setOdsustva(Array.isArray(podaciOdsustva) ? podaciOdsustva : []);
+
     } catch (err) {
       console.error("Greška pri komunikaciji sa serverom:", err);
       setZaposleni([]);
@@ -136,7 +136,7 @@ function App() {
       bolovanje_procenat: radnik.bolovanje_procenat || '65'
     });
     setIdZaIzmenu(radnik.id); 
-    setAktivniTab('postavke'); // Automatski prebaci na formu za izmenu
+    setAktivniTab('postavke');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -166,13 +166,16 @@ function App() {
   };
 
   const proveriPreklapanjeOdsustva = (radnikId, datumString) => {
+    if (!Array.isArray(odsustva)) return null;
     const targetDatum = new Date(datumString);
     targetDatum.setHours(0, 0, 0, 0);
 
     const aktivnoOdsustvo = odsustva.find(o => {
       if (o.zaposleni_id !== radnikId) return false;
-      const odDat = new Date(o.datum_od); odDat.setHours(0, 0, 0, 0);
-      const doDat = new Date(o.datum_do); doDat.setHours(0, 0, 0, 0);
+      const odDat = new Date(o.datum_od || o.datum); 
+      const doDat = new Date(o.datum_do || o.datum);
+      odDat.setHours(0, 0, 0, 0);
+      doDat.setHours(0, 0, 0, 0);
       return targetDatum >= odDat && targetDatum <= doDat;
     });
 
@@ -191,13 +194,14 @@ function App() {
       body: JSON.stringify({ zaposleni_id: radnikId, datum, pocetak, kraj })
     }).then(() => {
       setRaspored(stari => {
-        const ostali = stari.filter(r => !(r.zaposleni_id === radnikId && r.datum === datum));
+        const ostali = Array.isArray(stari) ? stari.filter(r => !(r.zaposleni_id === radnikId && r.datum === datum)) : [];
         return [...ostali, { zaposleni_id: radnikId, datum, pocetak, kraj }];
       });
     });
   };
 
   const izracunajPlaniraneSateUNedelji = (radnikId) => {
+    if (!Array.isArray(raspored)) return 0;
     return raspored
       .filter(r => r.zaposleni_id === radnikId && trenutnaNedelja.some(n => n.formatirano === r.datum))
       .reduce((ukupno, smena) => {
@@ -210,6 +214,7 @@ function App() {
   };
 
   const izracunajUkupneSateFirme = () => {
+    if (!Array.isArray(zaposleni)) return 0;
     return zaposleni.reduce((Zbir, radnik) => Zbir + izracunajPlaniraneSateUNedelji(radnik.id), 0);
   };
 
@@ -222,46 +227,6 @@ function App() {
         setPrikaziIzvestaj(true); 
       })
       .catch(() => alert("Greška pri generisanju izveštaja."));
-  };
-
-  // --- FUNKCIJA ZA PREUZIMANJE PDF-a ---
-  const preuzmiPDFIzvestaj = () => {
-    const element = document.getElementById('print-report-area');
-    const opt = {
-      margin:       [10, 10, 10, 10],
-      filename:     `Izvestaj_${izvestaj.imeRadnika.replace(' ', '_')}_${izabraniMesec}_${izabranaGodina}.pdf`,
-      image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { scale: 2, useCORS: true },
-      jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
-    };
-    html2pdf().set(opt).from(element).save();
-  };
-
-  // --- FUNKCIJA ZA PREUZIMANJE EXCEL-a ---
-  const preuzmiExcelIzvestaj = () => {
-    const podaciZaExcel = [
-      { "Stavka": "Zaposleni", "Vrednost / Iznos": izvestaj.imeRadnika },
-      { "Stavka": "Period", "Vrednost / Iznos": `${izabraniMesec} / ${izabranaGodina}` },
-      { "Stavka": "Osnovna satnica", "Vrednost / Iznos": `${izvestaj.satnica} RSD` },
-      { "Stavka": "", "Vrednost / Iznos": "" }, 
-      { "Stavka": "Odrađeni redovni/noćni sati", "Vrednost / Iznos": `${izvestaj.ukupnoSati} h` },
-      { "Stavka": "Od toga noćni rad", "Vrednost / Iznos": `${izvestaj.nocniSati} h` },
-      { "Stavka": "ZARADA OD RADA", "Vrednost / Iznos": `${izvestaj.zaradaOdRada} RSD` },
-      { "Stavka": "", "Vrednost / Iznos": "" },
-      { "Stavka": "Sati Godišnjeg odmora (GO)", "Vrednost / Iznos": `${izvestaj.satiGO} h` },
-      { "Stavka": "Naknada za GO", "Vrednost / Iznos": `${izvestaj.zaradaGO} RSD` },
-      { "Stavka": "", "Vrednost / Iznos": "" },
-      { "Stavka": "Sati Bolovanja", "Vrednost / Iznos": `${izvestaj.satiBolovanje} h` },
-      { "Stavka": "Naknada za Bolovanje", "Vrednost / Iznos": `${izvestaj.zaradaBolovanje} RSD` },
-      { "Stavka": "", "Vrednost / Iznos": "" },
-      { "Stavka": "UKUPNO ZA ISPLATU", "Vrednost / Iznos": `${izvestaj.plata} RSD` }
-    ];
-
-    const worksheet = XLSX.utils.json_to_sheet(podaciZaExcel);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Obracun Zarade");
-    worksheet['!cols'] = [{ wch: 30 }, { wch: 25 }];
-    XLSX.writeFile(workbook, `Obracun_${izvestaj.imeRadnika.replace(' ', '_')}_${izabraniMesec}_${izabranaGodina}.xlsx`);
   };
 
   // --- RENDEROVANJE LOGIN EKRANA ---
@@ -287,7 +252,6 @@ function App() {
     );
   }
 
-  // --- GLAVNA APLIKACIJA ---
   return (
     <div className="app-container">
       <header className="app-header">
@@ -322,7 +286,6 @@ function App() {
                   <p>Brzi analitički pregled rada i stanja u firmi za tekuću nedelju</p>
                 </div>
 
-                {/* Statističke kartice */}
                 <div className="dashboard-stats-grid">
                   <div className="stat-box">
                     <span className="stat-icon">👥</span>
@@ -341,13 +304,12 @@ function App() {
                   <div className="stat-box">
                     <span className="stat-icon">🌴</span>
                     <div className="stat-info">
-                      <h3>{odsustva.filter(o => o.tip === 'GO').length}</h3>
+                      <h3>{Array.isArray(odsustva) ? odsustva.filter(o => o.tip === 'GO').length : 0}</h3>
                       <p>Aktivnih godišnjih odmora</p>
                     </div>
                   </div>
                 </div>
 
-                {/* Brze akcije i obaveštenja */}
                 <div className="dashboard-layout" style={{ marginTop: '2rem', display: 'flex', gap: '20px' }}>
                   <div className="dashboard-card" style={{ flex: 1, background: '#1e293b', padding: '20px', borderRadius: '8px' }}>
                     <h3>🚀 Brze prečice</h3>
@@ -431,7 +393,7 @@ function App() {
                               <td className="text-left font-light">{radnik.ime} {radnik.prezime}</td>
                               
                               {trenutnaNedelja.map(dan => {
-                                const smena = raspored.find(r => r.zaposleni_id === radnik.id && r.datum === dan.formatirano) || { pocetak: '', kraj: '' };
+                                const smena = Array.isArray(raspored) ? (raspored.find(r => r.zaposleni_id === radnik.id && r.datum === dan.formatirano) || { pocetak: '', kraj: '' }) : { pocetak: '', kraj: '' };
                                 const valPocetak = (smena.pocetak || '').toUpperCase();
                                 const imaOdsustvo = proveriPreklapanjeOdsustva(radnik.id, dan.formatirano);
                                 
@@ -571,53 +533,40 @@ function App() {
       {prikaziIzvestaj && izvestaj && (
         <div className="modal-overlay">
           <div className="modal-content scrollable-y">
-            
-            <div id="print-report-area" style={{ padding: '10px', background: '#1e293b', borderRadius: '8px' }}>
-              <h2>Automatski Izveštaj Zarade</h2>
-              <div className="modal-subtitle">{izvestaj.imeRadnika}</div>
+            <h2>Automatski Izveštaj Zarade</h2>
+            <div className="modal-subtitle">{izvestaj.imeRadnika}</div>
 
-              <div className="modal-filters" data-html2canvas-ignore="true">
-                <select value={izabraniMesec} onChange={(e) => { setIzabraniMesec(e.target.value); generisiIzvestaj(aktivniRadnik.id, aktivniRadnik.ime, e.target.value, izabranaGodina); }}>
-                  <option value="1">Januar</option><option value="2">Februar</option><option value="3">Mart</option><option value="4">April</option>
-                  <option value="5">Maj</option><option value="6">Jun</option><option value="7">Jul</option><option value="8">Avgust</option>
-                  <option value="9">Septembar</option><option value="10">Oktobar</option><option value="11">Novembar</option><option value="12">Decembar</option>
-                </select>
-                <select value={izabranaGodina} onChange={(e) => { setIzabranaGodina(e.target.value); generisiIzvestaj(aktivniRadnik.id, aktivniRadnik.ime, izabraniMesec, e.target.value); }}>
-                  <option value="2025">2025</option><option value="2026">2026</option>
-                </select>
-              </div>
-
-              <div className="report-block">
-                <div className="report-row"><span className="label">Osnovna satnica:</span><span>{izvestaj.satnica} RSD</span></div>
-                <div className="divider"></div>
-                <div className="report-row"><span className="label">Odrađeni sati iz planera:</span><span>{izvestaj.ukupnoSati} h</span></div>
-                <div className="report-row"><span className="label">Od toga noćni sati:</span><span>{izvestaj.nocniSati} h</span></div>
-                <div className="report-row highlight"><span className="font-bold">Zarada od rada:</span><span className="font-bold">{izvestaj.zaradaOdRada} RSD</span></div>
-              </div>
-
-              <div className="report-block">
-                <h4>Odsustva zabeležena u planeru</h4>
-                <div className="report-row"><span className="label">Godišnji odmor ({izvestaj.goProcenat}%):</span><span className="text-yellow">{izvestaj.satiGO} h</span></div>
-                <div className="report-row text-yellow"><span className="label">Naknada za GO:</span><span>{izvestaj.zaradaGO} RSD</span></div>
-                <div className="divider"></div>
-                <div className="report-row"><span className="label">Bolovanje ({izvestaj.bolovanjeProcenat}%):</span><span className="text-red">{izvestaj.satiBolovanje} h</span></div>
-                <div className="report-row text-red"><span className="label">Naknada za Bolovanje:</span><span>{izvestaj.zaradaBolovanje} RSD</span></div>
-              </div>
-
-              <div className="report-total">
-                <div className="total-label">Ukupno za isplatu</div>
-                <div className="total-amount">{izvestaj.plata} RSD</div>
-              </div>
+            <div className="modal-filters">
+              <select value={izabraniMesec} onChange={(e) => { setIzabraniMesec(e.target.value); generisiIzvestaj(aktivniRadnik.id, aktivniRadnik.ime, e.target.value, izabranaGodina); }}>
+                <option value="1">Januar</option><option value="2">Februar</option><option value="3">Mart</option><option value="4">April</option>
+                <option value="5">Maj</option><option value="6">Jun</option><option value="7">Jul</option><option value="8">Avgust</option>
+                <option value="9">Septembar</option><option value="10">Oktobar</option><option value="11">Novembar</option><option value="12">Decembar</option>
+              </select>
+              <select value={izabranaGodina} onChange={(e) => { setIzabranaGodina(e.target.value); generisiIzvestaj(aktivniRadnik.id, aktivniRadnik.ime, izabraniMesec, e.target.value); }}>
+                <option value="2025">2025</option><option value="2026">2026</option>
+              </select>
             </div>
 
-            {/* DUGMIĆI ZA PREUZIMANJE */}
-            <div className="export-buttons-group" style={{ display: 'flex', gap: '10px', margin: '15px 0' }}>
-              <button onClick={preuzmiPDFIzvestaj} className="btn-action info" style={{ flex: 1, background: '#0284c7' }}>
-                📄 Preuzmi PDF
-              </button>
-              <button onClick={preuzmiExcelIzvestaj} className="btn-action info" style={{ flex: 1, background: '#16a34a' }}>
-                📊 Preuzmi Excel
-              </button>
+            <div className="report-block">
+              <div className="report-row"><span className="label">Osnovna satnica:</span><span>{izvestaj.satnica} RSD</span></div>
+              <div className="divider"></div>
+              <div className="report-row"><span className="label">Odrađeni sati iz planera:</span><span>{izvestaj.ukupnoSati} h</span></div>
+              <div className="report-row"><span className="label">Od toga noćni sati:</span><span>{izvestaj.nocniSati} h</span></div>
+              <div className="report-row highlight"><span className="font-bold">Zarada od rada:</span><span className="font-bold">{izvestaj.zaradaOdRada} RSD</span></div>
+            </div>
+
+            <div className="report-block">
+              <h4>Odsustva zabeležena u planeru</h4>
+              <div className="report-row"><span className="label">Godišnji odmor ({izvestaj.goProcenat}%):</span><span className="text-yellow">{izvestaj.satiGO} h</span></div>
+              <div className="report-row text-yellow"><span className="label">Naknada za GO:</span><span>{izvestaj.zaradaGO} RSD</span></div>
+              <div className="divider"></div>
+              <div className="report-row"><span className="label">Bolovanje ({izvestaj.bolovanjeProcenat}%):</span><span className="text-red">{izvestaj.satiBolovanje} h</span></div>
+              <div className="report-row text-red"><span className="label">Naknada za Bolovanje:</span><span>{izvestaj.zaradaBolovanje} RSD</span></div>
+            </div>
+
+            <div className="report-total">
+              <div className="total-label">Ukupno za isplatu</div>
+              <div className="total-amount">{izvestaj.plata} RSD</div>
             </div>
 
             <button onClick={() => setPrikaziIzvestaj(false)} className="btn-action dark w-100">Zatvori</button>
